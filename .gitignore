@@ -1,0 +1,29 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Umgebung
+.env
+
+# Daten (lokal, nicht in Git)
+data/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.claude/
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
