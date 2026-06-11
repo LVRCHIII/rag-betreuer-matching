@@ -35,6 +35,12 @@ class AppSettings(BaseModel):
     llm_model: Optional[str] = None
     llm_backend: Optional[str] = None
     embedding_model: Optional[str] = None
+    prompt_presets: Optional[list] = None
+
+
+class PromptPreset(BaseModel):
+    name: str
+    prompt: str
 
 
 @router.get("")
@@ -53,5 +59,26 @@ def update_settings(body: AppSettings):
         current["llm_backend"] = body.llm_backend
     if body.embedding_model is not None:
         current["embedding_model"] = body.embedding_model
+    if body.prompt_presets is not None:
+        current["prompt_presets"] = body.prompt_presets
+    save_settings_to_disk(current)
+    return current
+
+
+@router.post("/presets")
+def save_preset(preset: PromptPreset):
+    current = load_settings_from_disk()
+    presets = current.get("prompt_presets", [])
+    presets = [p for p in presets if p["name"] != preset.name]
+    presets.append({"name": preset.name, "prompt": preset.prompt})
+    current["prompt_presets"] = presets
+    save_settings_to_disk(current)
+    return current
+
+
+@router.delete("/presets/{name}")
+def delete_preset(name: str):
+    current = load_settings_from_disk()
+    current["prompt_presets"] = [p for p in current.get("prompt_presets", []) if p["name"] != name]
     save_settings_to_disk(current)
     return current

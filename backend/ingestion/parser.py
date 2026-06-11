@@ -1,6 +1,17 @@
+import html
 import io
+import re
 from pathlib import Path
 from typing import List, Dict, Any
+
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def strip_html(text: str) -> str:
+    """Entfernt HTML-Markup aus Zellwerten (z.B. HISinONE-Exporte)."""
+    text = _HTML_TAG_RE.sub(" ", text)
+    text = html.unescape(text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def parse_pdf(content: bytes) -> str:
@@ -19,8 +30,14 @@ def parse_xlsx(content: bytes) -> str:
     dfs = pd.read_excel(io.BytesIO(content), sheet_name=None)
     parts = []
     for sheet_name, df in dfs.items():
-        parts.append(f"=== Tabellenblatt: {sheet_name} ===")
-        parts.append(df.to_string(index=False))
+        df = df.fillna("").astype(str)
+        df = df.map(strip_html)
+        for _, row in df.iterrows():
+            row_text = " | ".join(
+                f"{col}: {val}" for col, val in row.items() if val
+            )
+            if row_text.strip():
+                parts.append(row_text)
     return "\n\n".join(parts)
 
 

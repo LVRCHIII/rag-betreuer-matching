@@ -42,12 +42,26 @@ export async function getSettings() {
   return res.json();
 }
 
-export async function saveSettings(data: Record<string, string>) {
+export async function saveSettings(data: Record<string, unknown>) {
   const res = await fetch(`${BASE}/api/settings`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
+  return res.json();
+}
+
+export async function savePreset(name: string, prompt: string) {
+  const res = await fetch(`${BASE}/api/settings/presets`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, prompt }),
+  });
+  return res.json();
+}
+
+export async function deletePreset(name: string) {
+  const res = await fetch(`${BASE}/api/settings/presets/${encodeURIComponent(name)}`, { method: "DELETE" });
   return res.json();
 }
 

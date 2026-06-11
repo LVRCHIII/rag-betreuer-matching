@@ -1,6 +1,10 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, ChevronDown, ChevronRight, BookOpen, Loader2 } from "lucide-react";
-import { streamChat, getCollections } from "../api/client";
+import {
+  Send, ChevronDown, ChevronRight, Loader2, Settings, X, Save, Trash2, Plus,
+  Sparkles, ArrowRight, FileText,
+} from "lucide-react";
+import gsap from "gsap";
+import { streamChat, getCollections, getSettings, saveSettings, savePreset, deletePreset, getModels } from "../api/client";
 import type { Message, SSEChunk } from "../api/client";
 
 interface Source {
@@ -16,6 +20,17 @@ interface ChatMessage {
   sources?: Source[];
 }
 
+interface Preset {
+  name: string;
+  prompt: string;
+}
+
+const SUGGESTIONS = [
+  { title: "Betreuer finden", text: "Ich suche einen Betreuer für meine Bachelorarbeit" },
+  { title: "Forschung erkunden", text: "Welche Professoren forschen zu KI?" },
+  { title: "Thema einordnen", text: "Ich möchte über Webentwicklung schreiben" },
+];
+
 export default function Chat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -23,19 +38,107 @@ export default function Chat() {
   const [collections, setCollections] = useState<{ name: string; count: number }[]>([]);
   const [selectedCollections, setSelectedCollections] = useState<string[]>([]);
   const [sourcesOpen, setSourcesOpen] = useState<Record<number, boolean>>({});
+
+  // Settings panel
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [systemPrompt, setSystemPrompt] = useState("");
+  const [llmModel, setLlmModel] = useState("");
+  const [llmBackend, setLlmBackend] = useState("ollama");
+  const [models, setModels] = useState<string[]>([]);
+  const [presets, setPresets] = useState<Preset[]>([]);
+  const [newPresetName, setNewPresetName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [savedMsg, setSavedMsg] = useState("");
+
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const heroRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     getCollections().then((cols) => {
       setCollections(cols);
       if (cols.length > 0) setSelectedCollections(cols.map((c: { name: string }) => c.name));
     });
+    loadSettings();
   }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Hero-Entrance, sobald (und solange) der Leerzustand sichtbar ist
+  useEffect(() => {
+    if (messages.length > 0 || !heroRef.current) return;
+    const ctx = gsap.context(() => {
+      const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
+      tl.fromTo("[data-hero-kicker]", { y: 16, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6 })
+        .fromTo(
+          "[data-hero-word]",
+          { y: 38, opacity: 0, rotateX: -40 },
+          { y: 0, opacity: 1, rotateX: 0, duration: 0.7, stagger: 0.08 },
+          "-=0.35"
+        )
+        .fromTo("[data-hero-sub]", { y: 18, opacity: 0 }, { y: 0, opacity: 1, duration: 0.6 }, "-=0.4")
+        .fromTo(
+          "[data-hero-card]",
+          { y: 26, opacity: 0 },
+          { y: 0, opacity: 1, duration: 0.55, stagger: 0.09 },
+          "-=0.35"
+        );
+    }, heroRef);
+    return () => ctx.revert();
+  }, [messages.length]);
+
+  // Settings-Panel Slide-in
+  useEffect(() => {
+    if (panelOpen && panelRef.current) {
+      gsap.fromTo(
+        panelRef.current,
+        { x: 48, opacity: 0 },
+        { x: 0, opacity: 1, duration: 0.45, ease: "power3.out" }
+      );
+    }
+  }, [panelOpen]);
+
+  const loadSettings = async () => {
+    const [s, m] = await Promise.all([getSettings(), getModels()]);
+    setSystemPrompt(s.system_prompt ?? "");
+    setLlmModel(s.llm_model ?? "");
+    setLlmBackend(s.llm_backend ?? "ollama");
+    setModels(m.models ?? []);
+    setPresets(s.prompt_presets ?? []);
+  };
+
+  const handleSaveSettings = async () => {
+    setSaving(true);
+    await saveSettings({ system_prompt: systemPrompt, llm_model: llmModel, llm_backend: llmBackend });
+    setSaving(false);
+    flash("Gespeichert ✓");
+  };
+
+  const handleSavePreset = async () => {
+    if (!newPresetName.trim()) return;
+    const updated = await savePreset(newPresetName.trim(), systemPrompt);
+    setPresets(updated.prompt_presets ?? []);
+    setNewPresetName("");
+    flash("Preset gespeichert ✓");
+  };
+
+  const handleDeletePreset = async (name: string) => {
+    const updated = await deletePreset(name);
+    setPresets(updated.prompt_presets ?? []);
+  };
+
+  const handleLoadPreset = (preset: Preset) => {
+    setSystemPrompt(preset.prompt);
+    flash(`"${preset.name}" geladen`);
+  };
+
+  const flash = (msg: string) => {
+    setSavedMsg(msg);
+    setTimeout(() => setSavedMsg(""), 2000);
+  };
 
   const toggleCollection = (name: string) => {
     setSelectedCollections((prev) =>
@@ -58,7 +161,12 @@ export default function Chat() {
 
     try {
       const apiMessages: Message[] = allMessages.map((m) => ({ role: m.role, content: m.content }));
-      for await (const chunk of streamChat({ messages: apiMessages, collections: selectedCollections })) {
+      for await (const chunk of streamChat({
+        messages: apiMessages,
+        collections: selectedCollections,
+        llm_model: llmModel || undefined,
+        llm_backend: llmBackend || undefined,
+      })) {
         const c = chunk as SSEChunk;
         if (c.event === "sources") {
           setMessages((prev) => {
@@ -77,7 +185,7 @@ export default function Chat() {
           });
         }
       }
-    } catch (e) {
+    } catch {
       setMessages((prev) => {
         const updated = [...prev];
         updated[assistantIdx] = {
@@ -99,134 +207,340 @@ export default function Chat() {
   };
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Collection selector */}
-      {collections.length > 0 && (
-        <div className="flex-shrink-0 px-4 py-2.5 border-b border-white/5 bg-[#0d1f27]/50 flex items-center gap-3 flex-wrap">
-          <span className="text-xs text-bht-cream/40 font-medium">Collections:</span>
-          {collections.map((col) => (
-            <button
-              key={col.name}
-              onClick={() => toggleCollection(col.name)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
-                selectedCollections.includes(col.name)
-                  ? "bg-bht-accent/20 text-bht-accent border border-bht-accent/30"
-                  : "bg-white/5 text-bht-cream/40 border border-transparent hover:border-white/10"
-              }`}
-            >
-              <span>{col.name}</span>
-              <span className="opacity-60">({col.count})</span>
-            </button>
-          ))}
+    <div className="flex h-full overflow-hidden gap-3">
+      {/* Main chat area */}
+      <div className="flex flex-col flex-1 min-w-0">
+        {/* Top bar: collections + settings toggle */}
+        <div className="flex-shrink-0 glass rounded-2xl px-4 py-2.5 flex items-center gap-2.5 flex-wrap">
+          <span className="text-[10px] uppercase tracking-[0.18em] text-bht-cream/35 font-semibold">
+            Wissensbasis
+          </span>
+          {collections.map((col) => {
+            const active = selectedCollections.includes(col.name);
+            return (
+              <button
+                key={col.name}
+                onClick={() => toggleCollection(col.name)}
+                className={`group flex items-center gap-2 pl-2.5 pr-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 border ${
+                  active
+                    ? "bg-bht-accent/[0.14] text-bht-accent-soft border-bht-accent/30 shadow-glow-sm"
+                    : "bg-white/[0.04] text-bht-cream/40 border-white/[0.06] hover:border-white/15 hover:text-bht-cream/70"
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full transition-all duration-200 ${
+                    active ? "bg-bht-accent shadow-glow-sm" : "bg-bht-cream/20"
+                  }`}
+                />
+                <span>{col.name}</span>
+                <span className={`text-[10px] tabular-nums ${active ? "text-bht-accent/60" : "opacity-50"}`}>
+                  {col.count}
+                </span>
+              </button>
+            );
+          })}
+          <button
+            onClick={() => setPanelOpen((v) => !v)}
+            className={`ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 border ${
+              panelOpen
+                ? "bg-bht-accent/[0.14] text-bht-accent-soft border-bht-accent/30 shadow-glow-sm"
+                : "bg-white/[0.04] text-bht-cream/40 border-white/[0.06] hover:border-white/15 hover:text-bht-cream/70"
+            }`}
+          >
+            <Settings size={12} />
+            Einstellungen
+          </button>
         </div>
-      )}
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-6">
-        {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-center gap-4 py-16">
-            <div className="w-12 h-12 rounded-2xl bg-bht-accent/15 flex items-center justify-center">
-              <BookOpen size={22} className="text-bht-accent" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-bht-cream mb-1">Betreuer-Matching</h2>
-              <p className="text-sm text-bht-cream/50 max-w-sm">
-                Beschreibe dein Thema und ich helfe dir, geeignete Betreuende für deine Abschlussarbeit zu finden.
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto px-2 lg:px-6 py-6 space-y-7">
+          {messages.length === 0 && (
+            <div ref={heroRef} className="flex flex-col items-center justify-center h-full text-center gap-7 py-10" style={{ perspective: "800px" }}>
+              <div data-hero-kicker className="flex items-center gap-2 px-3.5 py-1.5 rounded-full glass text-[10px] uppercase tracking-[0.22em] text-bht-cream/50 font-semibold">
+                <Sparkles size={11} className="text-bht-accent" />
+                BHT · Fachbereich I · by Lucas Bruhn
+              </div>
+
+              <h1 className="font-display text-4xl lg:text-[56px] font-bold leading-[1.08] tracking-tight max-w-2xl">
+                {"Finde die passende".split(" ").map((w) => (
+                  <span key={w} data-hero-word className="inline-block mr-[0.28em]">{w}</span>
+                ))}
+                <br />
+                <span data-hero-word className="inline-block text-ember">Betreuung.</span>
+              </h1>
+
+              <p data-hero-sub className="text-sm lg:text-base text-bht-cream/50 max-w-md leading-relaxed">
+                Beschreibe dein Thema — ich durchsuche die Wissensbasis der BHT und
+                schlage dir passende Betreuende für deine Abschlussarbeit vor.
               </p>
-            </div>
-            <div className="flex flex-wrap gap-2 justify-center mt-2">
-              {["Ich suche einen Betreuer für meine Bachelorarbeit", "Welche Professoren forschen zu KI?", "Ich möchte über Webentwicklung schreiben"].map((s) => (
-                <button
-                  key={s}
-                  onClick={() => { setInput(s); textareaRef.current?.focus(); }}
-                  className="text-xs px-3 py-1.5 rounded-full bg-white/5 text-bht-cream/60 hover:bg-white/10 hover:text-bht-cream transition-all border border-white/5"
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
 
-        {messages.map((msg, i) => (
-          <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div className={`max-w-2xl w-full ${msg.role === "user" ? "pl-12" : "pr-12"}`}>
-              {msg.role === "user" ? (
-                <div className="bg-bht-accent/20 border border-bht-accent/20 rounded-2xl rounded-br-sm px-4 py-3 text-sm text-bht-cream">
-                  {msg.content}
-                </div>
-              ) : (
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="w-6 h-6 rounded-full bg-bht-accent/20 flex items-center justify-center">
-                      <span className="text-[9px] font-bold text-bht-accent">AI</span>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-2 w-full max-w-2xl">
+                {SUGGESTIONS.map((s) => (
+                  <button
+                    key={s.text}
+                    data-hero-card
+                    onClick={() => { setInput(s.text); textareaRef.current?.focus(); }}
+                    className="group glass rounded-2xl p-4 text-left transition-all duration-300 hover:-translate-y-1 hover:shadow-glow-sm hover:border-bht-accent/25"
+                  >
+                    <p className="font-display text-[13px] font-semibold text-bht-cream/85 mb-1.5 flex items-center justify-between">
+                      {s.title}
+                      <ArrowRight size={13} className="text-bht-accent opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300" />
+                    </p>
+                    <p className="text-xs text-bht-cream/40 leading-relaxed">{s.text}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {messages.map((msg, i) => (
+            <div key={i} className={`flex animate-msg-in ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+              <div className={`max-w-2xl w-full ${msg.role === "user" ? "pl-14" : "pr-10"}`}>
+                {msg.role === "user" ? (
+                  <div className="relative ml-auto w-fit max-w-full bg-gradient-to-br from-bht-accent/[0.22] to-bht-accent-deep/[0.12] border border-bht-accent/25 rounded-2xl rounded-br-md px-4 py-3 text-sm text-bht-cream shadow-inner-hl">
+                    {msg.content}
+                  </div>
+                ) : (
+                  <div>
+                    <div className="flex items-center gap-2.5 mb-2.5">
+                      <div className="relative w-7 h-7 rounded-full btn-ember flex items-center justify-center flex-shrink-0">
+                        <Sparkles size={12} />
+                        {loading && i === messages.length - 1 && (
+                          <span className="absolute inset-0 rounded-full animate-pulse-ring" />
+                        )}
+                      </div>
+                      <span className="font-display text-xs text-bht-cream/45 font-medium tracking-wide">
+                        Betreuer-Assistent
+                      </span>
                     </div>
-                    <span className="text-xs text-bht-cream/40 font-medium">Betreuer-Assistent</span>
-                  </div>
-                  <div className="bg-white/5 border border-white/8 rounded-2xl rounded-tl-sm px-4 py-3 text-sm text-bht-cream/90">
-                    {msg.content ? (
-                      <div className="prose-chat" dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.content) }} />
-                    ) : (
-                      <Loader2 size={14} className="animate-spin text-bht-accent" />
-                    )}
-                  </div>
 
-                  {msg.sources && msg.sources.length > 0 && (
-                    <div className="mt-2">
-                      <button
-                        onClick={() => setSourcesOpen((prev) => ({ ...prev, [i]: !prev[i] }))}
-                        className="flex items-center gap-1.5 text-xs text-bht-cream/35 hover:text-bht-cream/60 transition-colors"
-                      >
-                        {sourcesOpen[i] ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                        {msg.sources.length} Quellen verwendet
-                      </button>
-                      {sourcesOpen[i] && (
-                        <div className="mt-2 space-y-1.5">
-                          {msg.sources.map((src, j) => (
-                            <div key={j} className="bg-white/3 border border-white/5 rounded-lg px-3 py-2">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="text-[10px] font-medium text-bht-accent/80">{src.collection}</span>
-                                <span className="text-[10px] text-bht-cream/30">{src.metadata?.source_file}</span>
-                                <span className="ml-auto text-[10px] text-bht-cream/25">{(src.score * 100).toFixed(0)}%</span>
-                              </div>
-                              <p className="text-xs text-bht-cream/50 line-clamp-2">{src.text}</p>
-                            </div>
-                          ))}
+                    <div className="glass rounded-2xl rounded-tl-md px-5 py-4 text-sm text-bht-cream/90">
+                      {msg.content ? (
+                        <div
+                          className={`prose-chat ${loading && i === messages.length - 1 ? "stream-caret" : ""}`}
+                          dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.content) }}
+                        />
+                      ) : (
+                        <div className="flex items-center gap-2.5 text-bht-cream/40 text-xs py-0.5">
+                          <span className="flex gap-1">
+                            {[0, 1, 2].map((d) => (
+                              <span
+                                key={d}
+                                className="w-1.5 h-1.5 rounded-full bg-bht-accent animate-bounce"
+                                style={{ animationDelay: `${d * 0.15}s`, animationDuration: "0.9s" }}
+                              />
+                            ))}
+                          </span>
+                          Durchsuche Wissensbasis …
                         </div>
                       )}
                     </div>
-                  )}
-                </div>
-              )}
+
+                    {msg.sources && msg.sources.length > 0 && (
+                      <div className="mt-2.5">
+                        <button
+                          onClick={() => setSourcesOpen((prev) => ({ ...prev, [i]: !prev[i] }))}
+                          className="flex items-center gap-1.5 text-xs text-bht-cream/35 hover:text-bht-accent-soft transition-colors"
+                        >
+                          {sourcesOpen[i] ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                          {msg.sources.length} Quellen verwendet
+                        </button>
+                        {sourcesOpen[i] && (
+                          <div className="mt-2.5 grid gap-2">
+                            {msg.sources.map((src, j) => (
+                              <div
+                                key={j}
+                                className="glass rounded-xl px-3.5 py-2.5 animate-fade-up"
+                                style={{ animationDelay: `${j * 0.05}s` }}
+                              >
+                                <div className="flex items-center gap-2 mb-1.5">
+                                  <FileText size={11} className="text-bht-accent/70 flex-shrink-0" />
+                                  <span className="text-[10px] font-semibold text-bht-accent/80 uppercase tracking-wider">
+                                    {src.collection}
+                                  </span>
+                                  <span className="text-[10px] text-bht-cream/30 truncate">
+                                    {src.metadata?.source_file}
+                                  </span>
+                                  <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+                                    <div className="w-12 h-1 rounded-full bg-white/[0.07] overflow-hidden">
+                                      <div
+                                        className="h-full rounded-full bg-gradient-to-r from-bht-accent-deep to-bht-accent-soft"
+                                        style={{ width: `${Math.round(src.score * 100)}%` }}
+                                      />
+                                    </div>
+                                    <span className="text-[10px] text-bht-cream/35 tabular-nums">
+                                      {(src.score * 100).toFixed(0)}%
+                                    </span>
+                                  </div>
+                                </div>
+                                <p className="text-xs text-bht-cream/45 line-clamp-2 leading-relaxed">{src.text}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
+          ))}
+          <div ref={bottomRef} />
+        </div>
+
+        {/* Input */}
+        <div className="flex-shrink-0 pb-1 px-2 lg:px-6">
+          <div className="field glass flex items-end gap-3 rounded-2xl px-4 py-3 transition-all">
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Beschreibe dein Thema oder stelle eine Frage..."
+              rows={1}
+              className="flex-1 bg-transparent text-sm text-bht-cream placeholder-bht-cream/30 resize-none outline-none border-none leading-relaxed max-h-32"
+              style={{ fieldSizing: "content" } as React.CSSProperties}
+            />
+            <button
+              onClick={handleSubmit}
+              disabled={!input.trim() || loading}
+              className="btn-ember flex-shrink-0 w-9 h-9 rounded-xl disabled:opacity-30 disabled:shadow-none flex items-center justify-center"
+            >
+              {loading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+            </button>
           </div>
-        ))}
-        <div ref={bottomRef} />
+          <p className="text-center text-[10px] text-bht-cream/20 mt-2">
+            Enter zum Senden · Shift+Enter für neue Zeile
+          </p>
+        </div>
       </div>
 
-      {/* Input */}
-      <div className="flex-shrink-0 p-4 border-t border-white/5">
-        <div className="flex items-end gap-3 bg-white/5 border border-white/10 rounded-2xl px-4 py-3 focus-within:border-bht-accent/40 transition-colors">
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Beschreibe dein Thema oder stelle eine Frage..."
-            rows={1}
-            className="flex-1 bg-transparent text-sm text-bht-cream placeholder-bht-cream/30 resize-none outline-none leading-relaxed max-h-32"
-            style={{ fieldSizing: "content" } as React.CSSProperties}
-          />
-          <button
-            onClick={handleSubmit}
-            disabled={!input.trim() || loading}
-            className="flex-shrink-0 w-8 h-8 rounded-xl bg-bht-accent disabled:opacity-30 hover:bg-bht-accent/80 active:scale-95 transition-all flex items-center justify-center"
-          >
-            {loading ? <Loader2 size={14} className="animate-spin text-bht-dark" /> : <Send size={14} className="text-bht-dark" />}
-          </button>
+      {/* Settings side panel */}
+      {panelOpen && (
+        <div ref={panelRef} className="w-80 flex-shrink-0 glass-deep rounded-2xl flex flex-col overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3.5">
+            <span className="font-display text-sm font-semibold text-bht-cream tracking-tight">Einstellungen</span>
+            <button
+              onClick={() => setPanelOpen(false)}
+              className="p-1 rounded-lg text-bht-cream/40 hover:text-bht-cream hover:bg-white/[0.06] transition-colors"
+            >
+              <X size={15} />
+            </button>
+          </div>
+          <div className="hairline mx-4" />
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-6">
+            {/* Model */}
+            <div className="space-y-2.5">
+              <h3 className="text-[10px] font-semibold text-bht-cream/40 uppercase tracking-[0.18em]">Modell</h3>
+              <div className="space-y-2">
+                <select
+                  value={llmBackend}
+                  onChange={(e) => setLlmBackend(e.target.value)}
+                  className="field w-full px-3 py-2 text-xs"
+                >
+                  <option value="ollama">Ollama (lokal)</option>
+                  <option value="openai">OpenAI (API)</option>
+                </select>
+                {models.length > 0 ? (
+                  <select
+                    value={llmModel}
+                    onChange={(e) => setLlmModel(e.target.value)}
+                    className="field w-full px-3 py-2 text-xs"
+                  >
+                    {models.map((m) => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                ) : (
+                  <input
+                    value={llmModel}
+                    onChange={(e) => setLlmModel(e.target.value)}
+                    placeholder="z.B. llama3"
+                    className="field w-full px-3 py-2 text-xs"
+                  />
+                )}
+              </div>
+            </div>
+
+            {/* Prompt Presets */}
+            {presets.length > 0 && (
+              <div className="space-y-2.5">
+                <h3 className="text-[10px] font-semibold text-bht-cream/40 uppercase tracking-[0.18em]">
+                  Gespeicherte Presets
+                </h3>
+                <div className="space-y-1.5">
+                  {presets.map((p) => (
+                    <div key={p.name} className="flex items-center gap-2 group">
+                      <button
+                        onClick={() => handleLoadPreset(p)}
+                        className="flex-1 text-left px-3 py-2 rounded-xl bg-white/[0.04] hover:bg-bht-accent/[0.1] border border-white/[0.07] hover:border-bht-accent/30 text-xs text-bht-cream/70 hover:text-bht-cream transition-all truncate"
+                      >
+                        {p.name}
+                      </button>
+                      <button
+                        onClick={() => handleDeletePreset(p.name)}
+                        className="opacity-0 group-hover:opacity-100 text-bht-cream/30 hover:text-red-400 transition-all"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* System Prompt */}
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <h3 className="text-[10px] font-semibold text-bht-cream/40 uppercase tracking-[0.18em]">
+                  System-Prompt
+                </h3>
+                <span className="text-[10px] text-bht-cream/25 tabular-nums">{systemPrompt.length} Z.</span>
+              </div>
+              <textarea
+                value={systemPrompt}
+                onChange={(e) => setSystemPrompt(e.target.value)}
+                rows={10}
+                className="field w-full px-3 py-2.5 text-xs text-bht-cream/80 resize-y font-mono leading-relaxed"
+              />
+
+              {/* Save as preset */}
+              <div className="flex gap-2">
+                <input
+                  value={newPresetName}
+                  onChange={(e) => setNewPresetName(e.target.value)}
+                  placeholder="Preset-Name..."
+                  onKeyDown={(e) => e.key === "Enter" && handleSavePreset()}
+                  className="field flex-1 px-3 py-1.5 text-xs"
+                />
+                <button
+                  onClick={handleSavePreset}
+                  disabled={!newPresetName.trim()}
+                  title="Als Preset speichern"
+                  className="px-2.5 py-1.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-bht-cream/50 hover:text-bht-accent hover:border-bht-accent/30 disabled:opacity-30 transition-all"
+                >
+                  <Plus size={13} />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Save + status */}
+          <div className="flex-shrink-0 p-4 space-y-2">
+            <div className="hairline mb-3" />
+            {savedMsg && (
+              <p className="text-xs text-bht-accent text-center animate-fade-up">{savedMsg}</p>
+            )}
+            <button
+              onClick={handleSaveSettings}
+              disabled={saving}
+              className="btn-ember w-full flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-xl disabled:opacity-40"
+            >
+              {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+              Einstellungen speichern
+            </button>
+          </div>
         </div>
-        <p className="text-center text-[10px] text-bht-cream/20 mt-2">Enter zum Senden · Shift+Enter für neue Zeile</p>
-      </div>
+      )}
     </div>
   );
 }
