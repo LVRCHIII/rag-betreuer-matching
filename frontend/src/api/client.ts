@@ -267,3 +267,16 @@ export async function* streamUpload(
     }
   }
 }
+
+// Workspace-API
+let _currentWorkspace = "";
+
+export function setApiWorkspace(id: string) {
+  _currentWorkspace = id;
+}
+
+export async function getWorkspaces() {
+  const res = await fetch(`${BASE}/api/workspaces`);
+  if (!res.ok) throw new Error("Workspaces konnten nicht geladen werden");
+  return res.json();
+}

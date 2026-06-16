@@ -8,6 +8,7 @@ from backend.api.routes_settings import router as settings_router
 from backend.api.routes_models import router as models_router
 from backend.api.routes_eval import router as eval_router
 from backend.api.routes_scraper import router as scraper_router
+from backend.api.routes_workspaces import router as workspaces_router
 
 app = FastAPI(
     title="RAG Betreuer-Matching API",
@@ -30,6 +31,7 @@ app.include_router(settings_router)
 app.include_router(models_router)
 app.include_router(eval_router)
 app.include_router(scraper_router)
+app.include_router(workspaces_router)
 
 
 @app.get("/api/health")

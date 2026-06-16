@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from "react";
 import {
   Send, ChevronDown, ChevronRight, Loader2, Settings, X, Save, Trash2, Plus,
-  Sparkles, ArrowRight, FileText, BarChart3,
+  Sparkles, ArrowRight, FileText, BarChart3, Layers,
 } from "lucide-react";
 import gsap from "gsap";
 import { streamChat, streamEval, getCollections, getSettings, saveSettings, savePreset, deletePreset, getModels } from "../api/client";
 import type { Message, SSEChunk, EvalEntry, EvalResult } from "../api/client";
+import { useWorkspace } from "../workspace/WorkspaceContext";
 
 interface Source {
   text: string;
@@ -32,6 +33,8 @@ const SUGGESTIONS = [
 ];
 
 export default function Chat() {
+  const { workspaces, current: currentWorkspace, setWorkspace } = useWorkspace();
+  const [wsDropdownOpen, setWsDropdownOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -266,6 +269,48 @@ export default function Chat() {
       <div className="flex flex-col flex-1 min-w-0">
         {/* Top bar: collections + settings toggle */}
         <div className="flex-shrink-0 glass rounded-2xl px-4 py-2.5 flex items-center gap-2.5 flex-wrap">
+          {/* Workspace switcher */}
+          {workspaces.length > 1 && (
+            <div className="relative">
+              <button
+                onClick={() => setWsDropdownOpen((v) => !v)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 border ${
+                  wsDropdownOpen
+                    ? "bg-bht-accent/[0.14] text-bht-accent-soft border-bht-accent/30 shadow-glow-sm"
+                    : "bg-white/[0.04] text-bht-cream/60 border-white/[0.06] hover:border-white/15 hover:text-bht-cream"
+                }`}
+              >
+                <Layers size={11} />
+                <span>{currentWorkspace?.label ?? "Bereich"}</span>
+                <ChevronDown size={11} className={`transition-transform duration-200 ${wsDropdownOpen ? "rotate-180" : ""}`} />
+              </button>
+              {wsDropdownOpen && (
+                <div className="absolute top-full mt-2 left-0 z-50 glass-deep rounded-xl overflow-hidden border border-white/[0.08] shadow-xl min-w-[180px]">
+                  {workspaces.map((ws) => (
+                    <button
+                      key={ws.id}
+                      onClick={() => { setWorkspace(ws.id); setWsDropdownOpen(false); }}
+                      className={`w-full text-left px-4 py-2.5 text-xs transition-all duration-150 flex items-center gap-2.5 ${
+                        currentWorkspace?.id === ws.id
+                          ? "text-bht-accent bg-bht-accent/[0.1]"
+                          : "text-bht-cream/60 hover:text-bht-cream hover:bg-white/[0.05]"
+                      }`}
+                    >
+                      <span
+                        className="w-2 h-2 rounded-full flex-shrink-0"
+                        style={{ background: ws.accent }}
+                      />
+                      <div>
+                        <div className="font-medium">{ws.label}</div>
+                        <div className="text-[10px] opacity-50 mt-0.5">{ws.subtitle}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          <div className="w-px h-3.5 bg-white/[0.08]" />
           <span className="text-[10px] uppercase tracking-[0.18em] text-bht-cream/35 font-semibold">
             Wissensbasis
           </span>
