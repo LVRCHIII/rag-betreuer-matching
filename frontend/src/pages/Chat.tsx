@@ -26,11 +26,6 @@ interface Preset {
   prompt: string;
 }
 
-const SUGGESTIONS = [
-  { title: "Betreuer finden", text: "Ich suche einen Betreuer für meine Bachelorarbeit" },
-  { title: "Forschung erkunden", text: "Welche Professoren forschen zu KI?" },
-  { title: "Thema einordnen", text: "Ich möchte über Webentwicklung schreiben" },
-];
 
 export default function Chat() {
   const { workspaces, current: currentWorkspace, setWorkspace } = useWorkspace();
@@ -374,35 +369,36 @@ export default function Chat() {
             <div ref={heroRef} className="flex flex-col items-center justify-center h-full text-center gap-7 py-10" style={{ perspective: "800px" }}>
               <div data-hero-kicker className="flex items-center gap-2 px-3.5 py-1.5 rounded-full glass text-[10px] uppercase tracking-[0.22em] text-bht-cream/50 font-semibold">
                 <Sparkles size={11} className="text-bht-accent" />
-                BHT · Fachbereich I · by Lucas Bruhn
+                BHT · {currentWorkspace?.subtitle ?? "Fachbereich I"}
               </div>
 
               <h1 className="font-display text-4xl lg:text-[56px] font-bold leading-[1.08] tracking-tight max-w-2xl">
-                {"Finde die passende".split(" ").map((w) => (
+                {(currentWorkspace?.chat_title ?? "Finde die passende Betreuung").split(" ").slice(0, -1).map((w) => (
                   <span key={w} data-hero-word className="inline-block mr-[0.28em]">{w}</span>
                 ))}
                 <br />
-                <span data-hero-word className="inline-block text-ember">Betreuung.</span>
+                <span data-hero-word className="inline-block text-ember">
+                  {(currentWorkspace?.chat_title ?? "Finde die passende Betreuung.").split(" ").at(-1)}.
+                </span>
               </h1>
 
               <p data-hero-sub className="text-sm lg:text-base text-bht-cream/50 max-w-md leading-relaxed">
-                Beschreibe dein Thema — ich durchsuche die Wissensbasis der BHT und
-                schlage dir passende Betreuende für deine Abschlussarbeit vor.
+                {currentWorkspace?.chat_intro ?? "Beschreibe dein Thema — ich durchsuche die Wissensbasis der BHT."}
               </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-2 w-full max-w-2xl">
-                {SUGGESTIONS.map((s) => (
+                {(currentWorkspace?.suggestions ?? []).map((text) => (
                   <button
-                    key={s.text}
+                    key={text}
                     data-hero-card
-                    onClick={() => { setInput(s.text); textareaRef.current?.focus(); }}
+                    onClick={() => { setInput(text); textareaRef.current?.focus(); }}
                     className="group glass rounded-2xl p-4 text-left transition-all duration-300 hover:-translate-y-1 hover:shadow-glow-sm hover:border-bht-accent/25"
                   >
                     <p className="font-display text-[13px] font-semibold text-bht-cream/85 mb-1.5 flex items-center justify-between">
-                      {s.title}
+                      {text.split(" ").slice(0, 3).join(" ")}
                       <ArrowRight size={13} className="text-bht-accent opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300" />
                     </p>
-                    <p className="text-xs text-bht-cream/40 leading-relaxed">{s.text}</p>
+                    <p className="text-xs text-bht-cream/40 leading-relaxed">{text}</p>
                   </button>
                 ))}
               </div>
@@ -537,7 +533,7 @@ export default function Chat() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Beschreibe dein Thema oder stelle eine Frage..."
+              placeholder={currentWorkspace?.placeholder ?? "Beschreibe dein Thema oder stelle eine Frage..."}
               rows={1}
               className="flex-1 bg-transparent text-sm text-bht-cream placeholder-bht-cream/30 resize-none outline-none border-none leading-relaxed max-h-32"
               style={{ fieldSizing: "content" } as React.CSSProperties}
