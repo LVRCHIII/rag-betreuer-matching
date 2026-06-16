@@ -1,12 +1,32 @@
-const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+const BASE = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? "http://localhost:8000" : "");
+
+// Aktiver Bereich (Workspace) – wird vom WorkspaceContext gesetzt und an alle
+// bereichs-abhängigen Requests angehängt.
+let currentWorkspace = "g02";
+
+export function setApiWorkspace(id: string) {
+  currentWorkspace = id;
+}
+
+/** Hängt ?workspace=<id> (plus optionale weitere Params) an einen Pfad an. */
+function ws(path: string, extra?: Record<string, string>): string {
+  const params = new URLSearchParams({ workspace: currentWorkspace, ...(extra ?? {}) });
+  const sep = path.includes("?") ? "&" : "?";
+  return `${BASE}${path}${sep}${params}`;
+}
+
+export async function getWorkspaces() {
+  const res = await fetch(`${BASE}/api/workspaces`);
+  return res.json();
+}
 
 export async function getCollections() {
-  const res = await fetch(`${BASE}/api/collections`);
+  const res = await fetch(ws("/api/collections"));
   return res.json();
 }
 
 export async function createCollection(name: string) {
-  const res = await fetch(`${BASE}/api/collections`, {
+  const res = await fetch(ws("/api/collections"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name }),
@@ -15,20 +35,65 @@ export async function createCollection(name: string) {
 }
 
 export async function deleteCollection(name: string) {
-  const res = await fetch(`${BASE}/api/collections/${encodeURIComponent(name)}`, { method: "DELETE" });
+  const res = await fetch(ws(`/api/collections/${encodeURIComponent(name)}`), { method: "DELETE" });
   return res.json();
 }
 
 export async function getCollectionFiles(name: string) {
-  const res = await fetch(`${BASE}/api/collections/${encodeURIComponent(name)}/files`);
+  const res = await fetch(ws(`/api/collections/${encodeURIComponent(name)}/files`));
   return res.json();
 }
 
 export async function deleteFile(collection: string, file: string) {
   const res = await fetch(
-    `${BASE}/api/collections/${encodeURIComponent(collection)}/files/${encodeURIComponent(file)}`,
+    ws(`/api/collections/${encodeURIComponent(collection)}/files/${encodeURIComponent(file)}`),
     { method: "DELETE" }
   );
+  return res.json();
+}
+
+export interface Chunk {
+  id: string;
+  text: string;
+  metadata: Record<string, string | number>;
+}
+
+export interface ChunkPage {
+  collection: string;
+  total: number;
+  offset: number;
+  limit: number;
+  chunks: Chunk[];
+}
+
+export async function getCollectionChunks(
+  name: string,
+  opts: { file?: string; limit?: number; offset?: number } = {}
+): Promise<ChunkPage> {
+  const extra: Record<string, string> = {
+    limit: String(opts.limit ?? 25),
+    offset: String(opts.offset ?? 0),
+  };
+  if (opts.file) extra.file = opts.file;
+  const res = await fetch(ws(`/api/collections/${encodeURIComponent(name)}/chunks`, extra));
+  if (!res.ok) throw new Error("Chunks konnten nicht geladen werden");
+  return res.json();
+}
+
+export interface ChatAttachment {
+  name: string;
+  text: string;
+  truncated?: boolean;
+}
+
+export async function parseAttachment(file: File): Promise<ChatAttachment> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${BASE}/api/chat/parse`, { method: "POST", body: form });
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new Error(err?.detail ?? "Datei konnte nicht gelesen werden");
+  }
   return res.json();
 }
 
@@ -38,12 +103,12 @@ export async function getModels() {
 }
 
 export async function getSettings() {
-  const res = await fetch(`${BASE}/api/settings`);
+  const res = await fetch(ws("/api/settings"));
   return res.json();
 }
 
 export async function saveSettings(data: Record<string, string>) {
-  const res = await fetch(`${BASE}/api/settings`, {
+  const res = await fetch(ws("/api/settings"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -59,6 +124,8 @@ export interface Message {
 export interface ChatRequest {
   messages: Message[];
   collections: string[];
+  workspace?: string;
+  attachments?: ChatAttachment[];
   k?: number;
   similarity_threshold?: number;
   llm_model?: string;
@@ -75,7 +142,7 @@ export async function* streamChat(req: ChatRequest): AsyncGenerator<SSEChunk> {
   const res = await fetch(`${BASE}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(req),
+    body: JSON.stringify({ workspace: currentWorkspace, ...req }),
   });
 
   if (!res.ok || !res.body) throw new Error("Chat-Anfrage fehlgeschlagen");
@@ -113,6 +180,7 @@ export async function* streamUpload(
   const form = new FormData();
   form.append("file", file);
   form.append("collection", collection);
+  form.append("workspace", currentWorkspace);
   form.append("chunk_size", String(chunkSize));
   form.append("chunk_overlap", String(chunkOverlap));
   form.append("datentyp", datentyp);

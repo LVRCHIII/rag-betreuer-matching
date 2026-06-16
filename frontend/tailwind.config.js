@@ -6,7 +6,7 @@ export default {
       colors: {
         "bht-dark": "#132933",
         "bht-cream": "#FFF5EF",
-        "bht-accent": "#FFA874",
+        "bht-accent": "rgb(var(--bht-accent) / <alpha-value>)",
       },
       fontFamily: {
         sans: ["Inter", "system-ui", "sans-serif"],

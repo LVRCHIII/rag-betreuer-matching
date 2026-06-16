@@ -1,10 +1,102 @@
-import { useState, useEffect } from "react";
-import { Plus, Trash2, FileText, ChevronRight, Loader2, Database } from "lucide-react";
-import { getCollections, createCollection, deleteCollection, getCollectionFiles, deleteFile } from "../api/client";
+import { useState, useEffect, useCallback } from "react";
+import { Plus, Trash2, FileText, ChevronRight, ChevronLeft, Loader2, Database, Eye, X } from "lucide-react";
+import { getCollections, createCollection, deleteCollection, getCollectionFiles, deleteFile, getCollectionChunks } from "../api/client";
+import type { ChunkPage } from "../api/client";
 
 interface Collection {
   name: string;
   count: number;
+}
+
+const PAGE_SIZE = 20;
+
+function ChunkBrowser({ collection, file, onClose }: { collection: string; file?: string; onClose: () => void }) {
+  const [page, setPage] = useState<ChunkPage | null>(null);
+  const [offset, setOffset] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async (off: number) => {
+    setLoading(true);
+    try {
+      const res = await getCollectionChunks(collection, { file, limit: PAGE_SIZE, offset: off });
+      setPage(res);
+      setOffset(off);
+    } finally {
+      setLoading(false);
+    }
+  }, [collection, file]);
+
+  useEffect(() => { load(0); }, [load]);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-6" onClick={onClose}>
+      <div
+        className="bg-[#132933] border border-white/10 rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
+          <Database size={16} className="text-bht-accent" />
+          <div className="flex-1 min-w-0">
+            <h2 className="text-sm font-semibold text-bht-cream truncate">{collection}</h2>
+            <p className="text-xs text-bht-cream/40 truncate">
+              {file ? `Datei: ${file}` : "Alle Chunks"} · {page?.total ?? "…"} Chunks
+            </p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-bht-cream/40 hover:text-bht-cream hover:bg-white/5 transition-all">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-3">
+          {loading ? (
+            <div className="flex justify-center py-12"><Loader2 size={20} className="animate-spin text-bht-cream/30" /></div>
+          ) : page && page.chunks.length > 0 ? (
+            page.chunks.map((chunk) => (
+              <div key={chunk.id} className="bg-white/5 border border-white/8 rounded-xl px-4 py-3">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  <span className="text-[10px] font-mono text-bht-accent/70 bg-bht-accent/10 rounded px-1.5 py-0.5">
+                    #{chunk.metadata.chunk_index ?? "?"}
+                  </span>
+                  <span className="text-[10px] text-bht-cream/40">{chunk.metadata.source_file}</span>
+                  {chunk.metadata.datentyp === "synthetisch" && (
+                    <span className="text-[10px] text-amber-400/80 bg-amber-400/10 rounded px-1.5 py-0.5">synthetisch</span>
+                  )}
+                  {chunk.metadata.fachbereich ? (
+                    <span className="text-[10px] text-bht-cream/30">{chunk.metadata.fachbereich}</span>
+                  ) : null}
+                </div>
+                <p className="text-xs text-bht-cream/70 whitespace-pre-wrap leading-relaxed">{chunk.text}</p>
+              </div>
+            ))
+          ) : (
+            <p className="text-sm text-bht-cream/30 text-center py-12">Keine Chunks vorhanden</p>
+          )}
+        </div>
+
+        {page && page.total > PAGE_SIZE && (
+          <div className="flex items-center justify-between px-5 py-3 border-t border-white/10">
+            <button
+              onClick={() => load(Math.max(0, offset - PAGE_SIZE))}
+              disabled={offset === 0 || loading}
+              className="flex items-center gap-1 text-xs text-bht-cream/50 hover:text-bht-cream disabled:opacity-30 transition-colors"
+            >
+              <ChevronLeft size={13} /> Zurück
+            </button>
+            <span className="text-xs text-bht-cream/40">
+              {offset + 1}–{Math.min(offset + PAGE_SIZE, page.total)} von {page.total}
+            </span>
+            <button
+              onClick={() => load(offset + PAGE_SIZE)}
+              disabled={offset + PAGE_SIZE >= page.total || loading}
+              className="flex items-center gap-1 text-xs text-bht-cream/50 hover:text-bht-cream disabled:opacity-30 transition-colors"
+            >
+              Weiter <ChevronRight size={13} />
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function Collections() {
@@ -14,6 +106,7 @@ export default function Collections() {
   const [creating, setCreating] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [files, setFiles] = useState<Record<string, string[]>>({});
+  const [browser, setBrowser] = useState<{ collection: string; file?: string } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -112,6 +205,13 @@ export default function Collections() {
                     <span className="text-xs text-bht-cream/40 ml-1">{col.count} Chunks</span>
                   </button>
                   <button
+                    onClick={() => setBrowser({ collection: col.name })}
+                    title="Chunks ansehen"
+                    className="p-1.5 rounded-lg text-bht-cream/30 hover:text-bht-accent hover:bg-bht-accent/10 transition-all"
+                  >
+                    <Eye size={14} />
+                  </button>
+                  <button
                     onClick={() => handleDelete(col.name)}
                     className="p-1.5 rounded-lg text-bht-cream/30 hover:text-red-400 hover:bg-red-400/10 transition-all"
                   >
@@ -131,6 +231,13 @@ export default function Collections() {
                           <FileText size={12} className="text-bht-cream/30 flex-shrink-0" />
                           <span className="text-xs text-bht-cream/60 flex-1 truncate">{file}</span>
                           <button
+                            onClick={() => setBrowser({ collection: col.name, file })}
+                            title="Chunks dieser Datei ansehen"
+                            className="opacity-0 group-hover:opacity-100 p-1 rounded text-bht-cream/30 hover:text-bht-accent transition-all"
+                          >
+                            <Eye size={11} />
+                          </button>
+                          <button
                             onClick={() => handleDeleteFile(col.name, file)}
                             className="opacity-0 group-hover:opacity-100 p-1 rounded text-bht-cream/30 hover:text-red-400 transition-all"
                           >
@@ -146,6 +253,14 @@ export default function Collections() {
           </div>
         )}
       </div>
+
+      {browser && (
+        <ChunkBrowser
+          collection={browser.collection}
+          file={browser.file}
+          onClose={() => setBrowser(null)}
+        />
+      )}
     </div>
   );
 }

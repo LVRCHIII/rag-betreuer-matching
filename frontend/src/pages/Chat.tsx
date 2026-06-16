@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, ChevronDown, ChevronRight, BookOpen, Loader2 } from "lucide-react";
-import { streamChat, getCollections } from "../api/client";
-import type { Message, SSEChunk } from "../api/client";
+import { Send, ChevronDown, ChevronRight, BookOpen, Loader2, Paperclip, X, FileText } from "lucide-react";
+import { streamChat, getCollections, parseAttachment } from "../api/client";
+import type { Message, SSEChunk, ChatAttachment } from "../api/client";
+import { useWorkspace } from "../workspace/WorkspaceContext";
 
 interface Source {
   text: string;
@@ -14,17 +15,24 @@ interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   sources?: Source[];
+  attachments?: string[];
 }
 
 export default function Chat() {
+  const { current } = useWorkspace();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [collections, setCollections] = useState<{ name: string; count: number }[]>([]);
   const [selectedCollections, setSelectedCollections] = useState<string[]>([]);
   const [sourcesOpen, setSourcesOpen] = useState<Record<number, boolean>>({});
+  const [highlightSource, setHighlightSource] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const [parsing, setParsing] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     getCollections().then((cols) => {
@@ -43,14 +51,61 @@ export default function Chat() {
     );
   };
 
+  const handleFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setAttachError(null);
+    setParsing(true);
+    try {
+      for (const file of Array.from(files)) {
+        const att = await parseAttachment(file);
+        setAttachments((prev) =>
+          prev.some((a) => a.name === att.name) ? prev : [...prev, att]
+        );
+      }
+    } catch (e) {
+      setAttachError(e instanceof Error ? e.message : "Datei konnte nicht gelesen werden");
+    } finally {
+      setParsing(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const removeAttachment = (name: string) => {
+    setAttachments((prev) => prev.filter((a) => a.name !== name));
+  };
+
+  const openSource = (msgIdx: number, srcNum: number) => {
+    setSourcesOpen((prev) => ({ ...prev, [msgIdx]: true }));
+    setHighlightSource(`src-${msgIdx}-${srcNum}`);
+    // Warten bis das Quellen-Panel gerendert ist, dann hinscrollen
+    setTimeout(() => {
+      document.getElementById(`src-${msgIdx}-${srcNum}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 50);
+    setTimeout(() => setHighlightSource(null), 2500);
+  };
+
+  const handleCitationClick = (msgIdx: number) => (e: React.MouseEvent) => {
+    const target = (e.target as HTMLElement).closest("[data-src]");
+    if (target) {
+      e.preventDefault();
+      openSource(msgIdx, Number((target as HTMLElement).dataset.src));
+    }
+  };
+
   const handleSubmit = async () => {
     const text = input.trim();
     if (!text || loading) return;
 
-    const userMsg: ChatMessage = { role: "user", content: text };
+    const sentAttachments = attachments;
+    const userMsg: ChatMessage = {
+      role: "user",
+      content: text,
+      attachments: sentAttachments.map((a) => a.name),
+    };
     const allMessages = [...messages, userMsg];
     setMessages(allMessages);
     setInput("");
+    setAttachments([]);
     setLoading(true);
 
     const assistantIdx = allMessages.length;
@@ -58,12 +113,25 @@ export default function Chat() {
 
     try {
       const apiMessages: Message[] = allMessages.map((m) => ({ role: m.role, content: m.content }));
-      for await (const chunk of streamChat({ messages: apiMessages, collections: selectedCollections })) {
+      for await (const chunk of streamChat({
+        messages: apiMessages,
+        collections: selectedCollections,
+        attachments: sentAttachments,
+      })) {
         const c = chunk as SSEChunk;
         if (c.event === "sources") {
           setMessages((prev) => {
             const updated = [...prev];
             updated[assistantIdx] = { ...updated[assistantIdx], sources: c.sources };
+            return updated;
+          });
+        } else if (c.event === "error") {
+          setMessages((prev) => {
+            const updated = [...prev];
+            updated[assistantIdx] = {
+              ...updated[assistantIdx],
+              content: updated[assistantIdx].content || `⚠️ ${c.message}`,
+            };
             return updated;
           });
         } else if (c.event === "token") {
@@ -129,13 +197,13 @@ export default function Chat() {
               <BookOpen size={22} className="text-bht-accent" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-bht-cream mb-1">Betreuer-Matching</h2>
+              <h2 className="text-lg font-semibold text-bht-cream mb-1">{current?.chat_title ?? "Chat"}</h2>
               <p className="text-sm text-bht-cream/50 max-w-sm">
-                Beschreibe dein Thema und ich helfe dir, geeignete Betreuende für deine Abschlussarbeit zu finden.
+                {current?.chat_intro}
               </p>
             </div>
             <div className="flex flex-wrap gap-2 justify-center mt-2">
-              {["Ich suche einen Betreuer für meine Bachelorarbeit", "Welche Professoren forschen zu KI?", "Ich möchte über Webentwicklung schreiben"].map((s) => (
+              {(current?.suggestions ?? []).map((s) => (
                 <button
                   key={s}
                   onClick={() => { setInput(s); textareaRef.current?.focus(); }}
@@ -154,6 +222,15 @@ export default function Chat() {
               {msg.role === "user" ? (
                 <div className="bg-bht-accent/20 border border-bht-accent/20 rounded-2xl rounded-br-sm px-4 py-3 text-sm text-bht-cream">
                   {msg.content}
+                  {msg.attachments && msg.attachments.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {msg.attachments.map((name) => (
+                        <span key={name} className="flex items-center gap-1 text-[10px] bg-white/10 rounded-full px-2 py-0.5 text-bht-cream/70">
+                          <FileText size={9} /> {name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div>
@@ -161,11 +238,15 @@ export default function Chat() {
                     <div className="w-6 h-6 rounded-full bg-bht-accent/20 flex items-center justify-center">
                       <span className="text-[9px] font-bold text-bht-accent">AI</span>
                     </div>
-                    <span className="text-xs text-bht-cream/40 font-medium">Betreuer-Assistent</span>
+                    <span className="text-xs text-bht-cream/40 font-medium">{current?.assistant_name ?? "Assistent"}</span>
                   </div>
                   <div className="bg-white/5 border border-white/8 rounded-2xl rounded-tl-sm px-4 py-3 text-sm text-bht-cream/90">
                     {msg.content ? (
-                      <div className="prose-chat" dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.content) }} />
+                      <div
+                        className="prose-chat"
+                        onClick={handleCitationClick(i)}
+                        dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.content, msg.sources?.length ?? 0) }}
+                      />
                     ) : (
                       <Loader2 size={14} className="animate-spin text-bht-accent" />
                     )}
@@ -183,13 +264,22 @@ export default function Chat() {
                       {sourcesOpen[i] && (
                         <div className="mt-2 space-y-1.5">
                           {msg.sources.map((src, j) => (
-                            <div key={j} className="bg-white/3 border border-white/5 rounded-lg px-3 py-2">
+                            <div
+                              key={j}
+                              id={`src-${i}-${j + 1}`}
+                              className={`bg-white/3 border rounded-lg px-3 py-2 transition-colors duration-500 ${
+                                highlightSource === `src-${i}-${j + 1}`
+                                  ? "border-bht-accent/60 bg-bht-accent/10"
+                                  : "border-white/5"
+                              }`}
+                            >
                               <div className="flex items-center gap-2 mb-1">
+                                <span className="text-[10px] font-bold text-bht-accent/80">[{j + 1}]</span>
                                 <span className="text-[10px] font-medium text-bht-accent/80">{src.collection}</span>
                                 <span className="text-[10px] text-bht-cream/30">{src.metadata?.source_file}</span>
                                 <span className="ml-auto text-[10px] text-bht-cream/25">{(src.score * 100).toFixed(0)}%</span>
                               </div>
-                              <p className="text-xs text-bht-cream/50 line-clamp-2">{src.text}</p>
+                              <p className={`text-xs text-bht-cream/50 ${highlightSource === `src-${i}-${j + 1}` ? "" : "line-clamp-2"}`}>{src.text}</p>
                             </div>
                           ))}
                         </div>
@@ -206,13 +296,45 @@ export default function Chat() {
 
       {/* Input */}
       <div className="flex-shrink-0 p-4 border-t border-white/5">
+        {/* Attachment chips */}
+        {(attachments.length > 0 || attachError) && (
+          <div className="flex flex-wrap items-center gap-2 mb-2 px-1">
+            {attachments.map((att) => (
+              <span key={att.name} className="flex items-center gap-1.5 text-xs bg-bht-accent/15 border border-bht-accent/25 text-bht-cream/80 rounded-full pl-2.5 pr-1.5 py-1">
+                <FileText size={11} className="text-bht-accent" />
+                {att.name}
+                {att.truncated && <span className="text-bht-cream/40 text-[10px]">(gekürzt)</span>}
+                <button onClick={() => removeAttachment(att.name)} className="p-0.5 rounded-full hover:bg-white/10 text-bht-cream/50">
+                  <X size={11} />
+                </button>
+              </span>
+            ))}
+            {attachError && <span className="text-xs text-red-400">{attachError}</span>}
+          </div>
+        )}
         <div className="flex items-end gap-3 bg-white/5 border border-white/10 rounded-2xl px-4 py-3 focus-within:border-bht-accent/40 transition-colors">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept=".pdf,.docx,.txt,.csv,.xlsx"
+            className="hidden"
+            onChange={(e) => handleFiles(e.target.files)}
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={parsing}
+            title="Datei anhängen (z. B. Zeugnis oder Exposé)"
+            className="flex-shrink-0 w-8 h-8 rounded-xl text-bht-cream/40 hover:text-bht-accent hover:bg-white/5 transition-all flex items-center justify-center"
+          >
+            {parsing ? <Loader2 size={15} className="animate-spin" /> : <Paperclip size={15} />}
+          </button>
           <textarea
             ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Beschreibe dein Thema oder stelle eine Frage..."
+            placeholder={current?.placeholder ?? "Stelle eine Frage..."}
             rows={1}
             className="flex-1 bg-transparent text-sm text-bht-cream placeholder-bht-cream/30 resize-none outline-none leading-relaxed max-h-32"
             style={{ fieldSizing: "content" } as React.CSSProperties}
@@ -225,14 +347,18 @@ export default function Chat() {
             {loading ? <Loader2 size={14} className="animate-spin text-bht-dark" /> : <Send size={14} className="text-bht-dark" />}
           </button>
         </div>
-        <p className="text-center text-[10px] text-bht-cream/20 mt-2">Enter zum Senden · Shift+Enter für neue Zeile</p>
+        <p className="text-center text-[10px] text-bht-cream/20 mt-2">Enter zum Senden · Shift+Enter für neue Zeile · 📎 für Zeugnis/Exposé</p>
       </div>
     </div>
   );
 }
 
-function formatMarkdown(text: string): string {
-  return text
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function formatMarkdown(text: string, sourceCount: number): string {
+  let html = escapeHtml(text)
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/\*(.+?)\*/g, "<em>$1</em>")
     .replace(/^### (.+)$/gm, "<h3>$1</h3>")
@@ -241,4 +367,13 @@ function formatMarkdown(text: string): string {
     .replace(/(<li>.*<\/li>)/gs, "<ul>$1</ul>")
     .replace(/\n\n/g, "<br/><br/>")
     .replace(/\n/g, "<br/>");
+
+  // Zitate [1], [2] … in klickbare Quellen-Links umwandeln
+  html = html.replace(/\[(\d{1,2})\]/g, (match, num) => {
+    const n = Number(num);
+    if (n < 1 || n > sourceCount) return match;
+    return `<button data-src="${n}" class="citation-link" title="Quelle ${n} anzeigen">${n}</button>`;
+  });
+
+  return html;
 }

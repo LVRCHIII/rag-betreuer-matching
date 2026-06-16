@@ -10,6 +10,7 @@ from backend.ingestion.parser import parse_file
 from backend.ingestion.chunker import chunk_text
 from backend.ingestion.embedder import embed_texts
 from backend.retrieval.vectorstore import add_chunks
+from backend.workspaces import DEFAULT_WORKSPACE, to_internal, to_display
 
 router = APIRouter(prefix="/api/upload", tags=["upload"])
 
@@ -18,11 +19,14 @@ async def ingestion_generator(
     filename: str,
     content: bytes,
     collection: str,
+    workspace: str,
     chunk_size: int,
     chunk_overlap: int,
     datentyp: str,
     fachbereich: str,
 ):
+    internal_collection = to_internal(workspace, collection)
+
     def send(event: str, data: dict):
         return f"data: {json.dumps({'event': event, **data})}\n\n"
 
@@ -49,7 +53,7 @@ async def ingestion_generator(
         yield send("status", {"message": f"Embeddings fertig. Indexierung in ChromaDB..."})
         await asyncio.sleep(0)
 
-        add_chunks(collection, chunks, embeddings, filename)
+        add_chunks(internal_collection, chunks, embeddings, filename)
         yield send("done", {"message": f"Erfolgreich indexiert: {len(chunks)} Chunks aus '{filename}'", "chunks": len(chunks)})
 
     except Exception as e:
@@ -60,6 +64,7 @@ async def ingestion_generator(
 async def upload_file(
     file: UploadFile = File(...),
     collection: str = Form(...),
+    workspace: str = Form(DEFAULT_WORKSPACE),
     chunk_size: int = Form(500),
     chunk_overlap: int = Form(50),
     datentyp: str = Form("real"),
@@ -76,7 +81,7 @@ async def upload_file(
         f.write(content)
 
     return StreamingResponse(
-        ingestion_generator(file.filename, content, collection, chunk_size, chunk_overlap, datentyp, fachbereich),
+        ingestion_generator(file.filename, content, collection, workspace, chunk_size, chunk_overlap, datentyp, fachbereich),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
