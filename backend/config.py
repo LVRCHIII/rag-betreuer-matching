@@ -1,5 +1,14 @@
+import os
 from pydantic_settings import BaseSettings
 from typing import List
+
+# Projektwurzel (Verzeichnis über backend/), damit alle relativen Pfade
+# unabhängig vom aktuellen Arbeitsverzeichnis funktionieren
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _abs(path: str) -> str:
+    return path if os.path.isabs(path) else os.path.join(PROJECT_ROOT, path)
 
 
 class Settings(BaseSettings):
@@ -30,8 +39,10 @@ class Settings(BaseSettings):
         return [o.strip() for o in self.cors_origins.split(",")]
 
     class Config:
-        env_file = ".env"
+        env_file = os.path.join(PROJECT_ROOT, ".env")
         case_sensitive = False
 
 
 settings = Settings()
+settings.chroma_persist_dir = _abs(settings.chroma_persist_dir)
+settings.upload_dir = _abs(settings.upload_dir)
