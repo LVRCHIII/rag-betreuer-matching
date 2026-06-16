@@ -5,6 +5,19 @@
 
 ---
 
+## Schnellinstallation (empfohlen)
+
+Statt der manuellen Schritte unten gibt es jetzt eine Ein-Klick-Installation:
+
+1. **Python 3.11** und **Ollama** installieren (siehe Schritt 0), dann `ollama pull llama3.1:8b`.
+2. Projektordner auf den Windows-PC kopieren (das Frontend ist bereits gebaut, `frontend/dist/` muss mitkopiert werden – Node.js wird auf dem Windows-PC **nicht** benötigt).
+3. Doppelklick auf **`windows\install.bat`** – erstellt die virtuelle Umgebung, installiert alle Abhängigkeiten und legt eine Desktop-Verknüpfung **"Betreuer-Matching"** an.
+4. Starten per Doppelklick auf die Desktop-Verknüpfung (oder `windows\start.bat`). Der Browser öffnet sich automatisch unter http://localhost:8000 – Backend und Frontend laufen als ein Prozess.
+
+Nach Code-Änderungen am Frontend einmal `npm run build` in `frontend/` ausführen, damit `frontend/dist/` aktuell ist.
+
+---
+
 ## Schritt 0 – Einmalig: Software installieren
 
 Diese vier Programme müssen vorhanden sein, bevor der Rest läuft.

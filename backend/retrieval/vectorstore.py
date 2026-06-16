@@ -31,6 +31,31 @@ def add_chunks(
     col.add(ids=ids, embeddings=embeddings, documents=documents, metadatas=metadatas)
 
 
+def upsert_chunks(
+    collection_name: str,
+    ids: List[str],
+    documents: List[str],
+    metadatas: List[Dict[str, Any]],
+    embeddings: List[List[float]],
+) -> None:
+    col = get_or_create_collection(collection_name)
+    col.upsert(ids=ids, embeddings=embeddings, documents=documents, metadatas=metadatas)
+
+
+def get_ids_by_metadata(collection_name: str, where: Dict[str, Any]) -> List[str]:
+    col = get_or_create_collection(collection_name)
+    if col.count() == 0:
+        return []
+    return col.get(where=where)["ids"]
+
+
+def delete_ids(collection_name: str, ids: List[str]) -> None:
+    if not ids:
+        return
+    col = get_or_create_collection(collection_name)
+    col.delete(ids=ids)
+
+
 def query_collections(
     collection_names: List[str],
     query_embedding: List[float],
@@ -88,6 +113,24 @@ def get_collection_files(name: str) -> List[str]:
         if meta and "source_file" in meta:
             files.add(meta["source_file"])
     return sorted(files)
+
+
+def get_collection_chunks(
+    name: str,
+    source_file: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> Dict[str, Any]:
+    col = get_client().get_collection(name)
+    where = {"source_file": source_file} if source_file else None
+    total = len(col.get(where=where, include=[])["ids"]) if where else col.count()
+    res = col.get(where=where, limit=limit, offset=offset, include=["documents", "metadatas"])
+    chunks = [
+        {"id": cid, "text": doc, "metadata": meta or {}}
+        for cid, doc, meta in zip(res["ids"], res["documents"], res["metadatas"])
+    ]
+    chunks.sort(key=lambda c: (c["metadata"].get("source_file", ""), c["metadata"].get("chunk_index", 0)))
+    return {"collection": name, "total": total, "offset": offset, "limit": limit, "chunks": chunks}
 
 
 def delete_file_from_collection(collection_name: str, source_file: str) -> int:
