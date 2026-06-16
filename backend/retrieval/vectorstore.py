@@ -31,6 +31,31 @@ def add_chunks(
     col.add(ids=ids, embeddings=embeddings, documents=documents, metadatas=metadatas)
 
 
+def upsert_chunks(
+    collection_name: str,
+    ids: List[str],
+    documents: List[str],
+    metadatas: List[Dict[str, Any]],
+    embeddings: List[List[float]],
+) -> None:
+    col = get_or_create_collection(collection_name)
+    col.upsert(ids=ids, embeddings=embeddings, documents=documents, metadatas=metadatas)
+
+
+def get_ids_by_metadata(collection_name: str, where: Dict[str, Any]) -> List[str]:
+    col = get_or_create_collection(collection_name)
+    if col.count() == 0:
+        return []
+    return col.get(where=where)["ids"]
+
+
+def delete_ids(collection_name: str, ids: List[str]) -> None:
+    if not ids:
+        return
+    col = get_or_create_collection(collection_name)
+    col.delete(ids=ids)
+
+
 def query_collections(
     collection_names: List[str],
     query_embedding: List[float],

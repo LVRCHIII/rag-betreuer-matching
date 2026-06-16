@@ -49,7 +49,7 @@ async def chat_generator(req: ChatRequest):
 
     context = build_context(chunks)
     sources = [
-        {"text": c["text"][:200], "metadata": c["metadata"], "score": c["score"], "collection": c["collection"]}
+        {"text": c["text"], "metadata": c["metadata"], "score": c["score"], "collection": c["collection"]}
         for c in chunks
     ]
 

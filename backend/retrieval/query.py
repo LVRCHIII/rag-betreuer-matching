@@ -22,5 +22,11 @@ def build_context(chunks: List[Dict[str, Any]]) -> str:
         collection = chunk.get("collection", "")
         datentyp = meta.get("datentyp", "real")
         label = "[Synthetische Datenbasis] " if datentyp == "synthetisch" else ""
+        if meta.get("source_url"):
+            source = f"{source}, {meta['source_url']}"
+            if meta.get("scraped_at"):
+                source += f", abgerufen am {meta['scraped_at']}"
+        if meta.get("llm_enriched") == "ja":
+            label += "[Teilweise KI-extrahiert, siehe Kennzeichnung im Text] "
         parts.append(f"[{i}] {label}Quelle: {source} (Collection: {collection})\n{chunk['text']}")
     return "\n\n---\n\n".join(parts)

@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from "react";
 import {
   Send, ChevronDown, ChevronRight, Loader2, Settings, X, Save, Trash2, Plus,
-  Sparkles, ArrowRight, FileText,
+  Sparkles, ArrowRight, FileText, BarChart3,
 } from "lucide-react";
 import gsap from "gsap";
-import { streamChat, getCollections, getSettings, saveSettings, savePreset, deletePreset, getModels } from "../api/client";
-import type { Message, SSEChunk } from "../api/client";
+import { streamChat, streamEval, getCollections, getSettings, saveSettings, savePreset, deletePreset, getModels } from "../api/client";
+import type { Message, SSEChunk, EvalEntry, EvalResult } from "../api/client";
 
 interface Source {
   text: string;
@@ -49,6 +49,14 @@ export default function Chat() {
   const [newPresetName, setNewPresetName] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState("");
+
+  // Evaluation panel
+  const [evalOpen, setEvalOpen] = useState(false);
+  const [evalRunning, setEvalRunning] = useState(false);
+  const [evalResults, setEvalResults] = useState<EvalResult[]>([]);
+  const [evalProgress, setEvalProgress] = useState<{ current: number; total: number } | null>(null);
+  const [evalAverage, setEvalAverage] = useState<number | null>(null);
+  const [evalError, setEvalError] = useState("");
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -138,6 +146,52 @@ export default function Chat() {
   const flash = (msg: string) => {
     setSavedMsg(msg);
     setTimeout(() => setSavedMsg(""), 2000);
+  };
+
+  const buildEvalEntries = (): EvalEntry[] => {
+    const entries: EvalEntry[] = [];
+    messages.forEach((msg, i) => {
+      if (msg.role !== "assistant" || !msg.content) return;
+      const userMsg = [...messages.slice(0, i)].reverse().find((m) => m.role === "user");
+      if (!userMsg) return;
+      entries.push({
+        id: `q${entries.length + 1}`,
+        question: userMsg.content,
+        answer: msg.content,
+        contexts: msg.sources?.map((s) => s.text) ?? [],
+      });
+    });
+    return entries;
+  };
+
+  const handleRunEval = async () => {
+    const entries = buildEvalEntries();
+    if (entries.length === 0 || evalRunning) return;
+
+    setPanelOpen(false);
+    setEvalOpen(true);
+    setEvalRunning(true);
+    setEvalResults([]);
+    setEvalAverage(null);
+    setEvalError("");
+    setEvalProgress({ current: 0, total: entries.length });
+
+    try {
+      for await (const chunk of streamEval(entries, llmModel || undefined)) {
+        if (chunk.event === "progress") {
+          setEvalProgress({ current: chunk.current, total: chunk.total });
+        } else if (chunk.event === "result") {
+          setEvalResults((prev) => [...prev, chunk.result]);
+        } else if (chunk.event === "done") {
+          setEvalAverage(chunk.average_score);
+        }
+      }
+    } catch {
+      setEvalError("Evaluation fehlgeschlagen. Läuft das Backend?");
+    } finally {
+      setEvalRunning(false);
+      setEvalProgress(null);
+    }
   };
 
   const toggleCollection = (name: string) => {
@@ -240,8 +294,25 @@ export default function Chat() {
             );
           })}
           <button
-            onClick={() => setPanelOpen((v) => !v)}
-            className={`ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 border ${
+            onClick={() => {
+              if (evalOpen) { setEvalOpen(false); return; }
+              if (evalResults.length > 0 || evalRunning) { setPanelOpen(false); setEvalOpen(true); return; }
+              handleRunEval();
+            }}
+            disabled={!evalOpen && !evalRunning && evalResults.length === 0 && buildEvalEntries().length === 0}
+            title="RAGAS-Evaluation der aktuellen Konversation"
+            className={`ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 border disabled:opacity-30 disabled:cursor-not-allowed ${
+              evalOpen
+                ? "bg-bht-accent/[0.14] text-bht-accent-soft border-bht-accent/30 shadow-glow-sm"
+                : "bg-white/[0.04] text-bht-cream/40 border-white/[0.06] hover:border-white/15 hover:text-bht-cream/70"
+            }`}
+          >
+            {evalRunning ? <Loader2 size={12} className="animate-spin" /> : <BarChart3 size={12} />}
+            Auswertung
+          </button>
+          <button
+            onClick={() => { setEvalOpen(false); setPanelOpen((v) => !v); }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 border ${
               panelOpen
                 ? "bg-bht-accent/[0.14] text-bht-accent-soft border-bht-accent/30 shadow-glow-sm"
                 : "bg-white/[0.04] text-bht-cream/40 border-white/[0.06] hover:border-white/15 hover:text-bht-cream/70"
@@ -358,9 +429,34 @@ export default function Chat() {
                                   <span className="text-[10px] font-semibold text-bht-accent/80 uppercase tracking-wider">
                                     {src.collection}
                                   </span>
-                                  <span className="text-[10px] text-bht-cream/30 truncate">
-                                    {src.metadata?.source_file}
-                                  </span>
+                                  {src.metadata?.source_url ? (
+                                    <a
+                                      href={src.metadata.source_url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="text-[10px] text-bht-cream/40 hover:text-bht-accent-soft underline decoration-bht-cream/20 underline-offset-2 truncate transition-colors"
+                                      title={`Quelle öffnen: ${src.metadata.source_url}`}
+                                    >
+                                      {src.metadata?.source_file}
+                                    </a>
+                                  ) : (
+                                    <span className="text-[10px] text-bht-cream/30 truncate">
+                                      {src.metadata?.source_file}
+                                    </span>
+                                  )}
+                                  {src.metadata?.scraped_at && (
+                                    <span className="text-[10px] text-bht-cream/25 flex-shrink-0">
+                                      Stand {src.metadata.scraped_at}
+                                    </span>
+                                  )}
+                                  {src.metadata?.llm_enriched === "ja" && (
+                                    <span
+                                      className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-bht-accent/[0.12] text-bht-accent-soft border border-bht-accent/25 flex-shrink-0"
+                                      title="Forschungsinfos wurden per lokalem LLM von der verlinkten Homepage extrahiert"
+                                    >
+                                      KI-extrahiert
+                                    </span>
+                                  )}
                                   <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
                                     <div className="w-12 h-1 rounded-full bg-white/[0.07] overflow-hidden">
                                       <div
@@ -414,6 +510,93 @@ export default function Chat() {
           </p>
         </div>
       </div>
+
+      {/* Evaluation side panel */}
+      {evalOpen && (
+        <div className="w-80 flex-shrink-0 glass-deep rounded-2xl flex flex-col overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3.5">
+            <span className="font-display text-sm font-semibold text-bht-cream tracking-tight flex items-center gap-2">
+              <BarChart3 size={14} className="text-bht-accent" />
+              RAGAS-Auswertung
+            </span>
+            <button
+              onClick={() => setEvalOpen(false)}
+              className="p-1 rounded-lg text-bht-cream/40 hover:text-bht-cream hover:bg-white/[0.06] transition-colors"
+            >
+              <X size={15} />
+            </button>
+          </div>
+          <div className="hairline mx-4" />
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {evalError && <p className="text-xs text-red-400">{evalError}</p>}
+
+            {evalRunning && evalProgress && (
+              <div className="glass rounded-xl px-3.5 py-3 space-y-2">
+                <div className="flex items-center gap-2 text-xs text-bht-cream/60">
+                  <Loader2 size={12} className="animate-spin text-bht-accent" />
+                  Bewerte Paar {evalProgress.current} / {evalProgress.total} …
+                </div>
+                <div className="w-full h-1 rounded-full bg-white/[0.07] overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-bht-accent-deep to-bht-accent-soft transition-all duration-500"
+                    style={{ width: `${(evalProgress.current / Math.max(evalProgress.total, 1)) * 100}%` }}
+                  />
+                </div>
+                <p className="text-[10px] text-bht-cream/30 leading-relaxed">
+                  Der Judge (LLM) bewertet jede Antwort — das kann pro Paar etwas dauern.
+                </p>
+              </div>
+            )}
+
+            {evalAverage !== null && (
+              <div className="glass rounded-xl px-3.5 py-3 text-center">
+                <p className="text-[10px] uppercase tracking-[0.18em] text-bht-cream/40 font-semibold mb-1">
+                  Gesamt-Score
+                </p>
+                <p className="font-display text-3xl font-bold text-ember tabular-nums">
+                  {(evalAverage * 100).toFixed(0)}%
+                </p>
+              </div>
+            )}
+
+            {evalResults.map((r) => (
+              <div key={r.id} className="glass rounded-xl px-3.5 py-3 space-y-2.5 animate-fade-up">
+                <p className="text-xs text-bht-cream/70 line-clamp-2 leading-relaxed">
+                  <span className="text-bht-accent/80 font-semibold mr-1.5">{r.id}</span>
+                  {r.question}
+                </p>
+                {r.error ? (
+                  <p className="text-[10px] text-red-400 leading-relaxed">{r.error}</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    <ScoreBar label="Answer Relevancy" value={r.answer_relevancy} />
+                    <ScoreBar label="Faithfulness" value={r.faithfulness} />
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {!evalRunning && evalResults.length === 0 && !evalError && (
+              <p className="text-xs text-bht-cream/40 leading-relaxed">
+                Noch keine Ergebnisse. Starte die Auswertung, sobald mindestens eine Antwort im Chat vorliegt.
+              </p>
+            )}
+          </div>
+
+          <div className="flex-shrink-0 p-4">
+            <div className="hairline mb-3" />
+            <button
+              onClick={handleRunEval}
+              disabled={evalRunning || buildEvalEntries().length === 0}
+              className="btn-ember w-full flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-semibold rounded-xl disabled:opacity-40"
+            >
+              {evalRunning ? <Loader2 size={13} className="animate-spin" /> : <BarChart3 size={13} />}
+              {evalResults.length > 0 ? "Neu auswerten" : "Auswertung starten"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Settings side panel */}
       {panelOpen && (
@@ -540,6 +723,29 @@ export default function Chat() {
             </button>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+function ScoreBar({ label, value }: { label: string; value: number | null }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[10px] text-bht-cream/40 w-28 flex-shrink-0">{label}</span>
+      {value === null ? (
+        <span className="text-[10px] text-bht-cream/25">—</span>
+      ) : (
+        <>
+          <div className="flex-1 h-1 rounded-full bg-white/[0.07] overflow-hidden">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-bht-accent-deep to-bht-accent-soft"
+              style={{ width: `${Math.round(value * 100)}%` }}
+            />
+          </div>
+          <span className="text-[10px] text-bht-cream/55 tabular-nums w-8 text-right">
+            {(value * 100).toFixed(0)}%
+          </span>
+        </>
       )}
     </div>
   );
