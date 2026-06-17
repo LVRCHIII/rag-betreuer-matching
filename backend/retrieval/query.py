@@ -10,7 +10,7 @@ def retrieve(
     similarity_threshold: float = 0.0,
     embedding_model: str = None,
 ) -> List[Dict[str, Any]]:
-    embeddings = embed_texts([query], model_name=embedding_model)
+    embeddings = embed_texts([query], model_name=embedding_model, is_query=True)
     return query_collections(collection_names, embeddings[0], k=k, similarity_threshold=similarity_threshold)
 
 

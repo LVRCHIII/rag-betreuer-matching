@@ -498,6 +498,21 @@ export default function Chat() {
                                       KI-extrahiert
                                     </span>
                                   )}
+                                  {src.metadata?.datentyp === "synthetisch" ? (
+                                    <span
+                                      className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-amber-400/[0.12] text-amber-300/90 border border-amber-400/25 flex-shrink-0"
+                                      title="Synthetische Datenbasis – nicht aus realen Quellen"
+                                    >
+                                      Synthetisch
+                                    </span>
+                                  ) : (
+                                    <span
+                                      className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-400/[0.1] text-emerald-300/80 border border-emerald-400/20 flex-shrink-0"
+                                      title="Echte, reale Datenbasis"
+                                    >
+                                      Echt
+                                    </span>
+                                  )}
                                   <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
                                     <div className="w-12 h-1 rounded-full bg-white/[0.07] overflow-hidden">
                                       <div

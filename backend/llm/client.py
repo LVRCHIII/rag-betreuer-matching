@@ -14,6 +14,9 @@ async def stream_ollama(
         "model": model,
         "messages": messages,
         "stream": True,
+        # Niedrige Temperature: das Modell soll sich strikt an den Kontext halten
+        # und nicht aus seinem Trainingswissen Personen erfinden (RAG-Faktentreue).
+        "options": {"temperature": 0.15},
     }
     async with httpx.AsyncClient(timeout=120) as client:
         async with client.stream("POST", url, json=payload) as response:

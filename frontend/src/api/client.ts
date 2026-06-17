@@ -275,6 +275,10 @@ export function setApiWorkspace(id: string) {
   _currentWorkspace = id;
 }
 
+export function getApiWorkspace() {
+  return _currentWorkspace;
+}
+
 export async function getWorkspaces() {
   const res = await fetch(`${BASE}/api/workspaces`);
   if (!res.ok) throw new Error("Workspaces konnten nicht geladen werden");
