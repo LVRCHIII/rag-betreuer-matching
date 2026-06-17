@@ -1,0 +1,3 @@
+# Zusätzliche Werkzeuge nur für das Erstellen der Installer (nicht zur Laufzeit).
+# Installation auf der jeweiligen Build-Maschine:  pip install -r build-requirements.txt
+pyinstaller==6.11.1

@@ -4,9 +4,12 @@ Jeder Bereich gehört einer Gruppe und hat eigene Collections (per Namens-Prefix
 getrennt), einen eigenen System-Prompt und eine eigene Akzentfarbe. LLM- und
 Embedding-Modell sind geteilt (abhängig von der installierten Hardware).
 """
+import json
+import os
 from dataclasses import dataclass, field
 from typing import Dict, List
 
+from backend.config import data_path
 from backend.llm.prompts import DEFAULT_SYSTEM_PROMPT
 
 
@@ -81,6 +84,51 @@ WORKSPACES: Dict[str, Workspace] = {
 }
 
 DEFAULT_WORKSPACE = "g02"
+
+
+# ---- Editierbare Texte (vom Frontend überschreibbar, persistent auf Platte) ----
+
+OVERRIDES_FILE = data_path("data", "workspace_overrides.json")
+
+# Felder, die über die Einstellungen anpassbar sind (Akzent + System-Prompt bleiben fix)
+EDITABLE_FIELDS = (
+    "label",
+    "subtitle",
+    "chat_title",
+    "chat_intro",
+    "assistant_name",
+    "placeholder",
+    "suggestions",
+)
+
+
+def load_overrides() -> dict:
+    if os.path.exists(OVERRIDES_FILE):
+        with open(OVERRIDES_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+
+def save_overrides(data: dict) -> None:
+    os.makedirs(os.path.dirname(OVERRIDES_FILE), exist_ok=True)
+    with open(OVERRIDES_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+def workspace_public(ws: "Workspace", overrides: dict | None = None) -> dict:
+    """Öffentliche Darstellung eines Bereichs – Defaults gemerged mit Overrides."""
+    ov = (overrides if overrides is not None else load_overrides()).get(ws.id, {})
+    return {
+        "id": ws.id,
+        "label": ov.get("label", ws.label),
+        "subtitle": ov.get("subtitle", ws.subtitle),
+        "accent": ws.accent,
+        "chat_title": ov.get("chat_title", ws.chat_title),
+        "chat_intro": ov.get("chat_intro", ws.chat_intro),
+        "assistant_name": ov.get("assistant_name", ws.assistant_name),
+        "placeholder": ov.get("placeholder", ws.placeholder),
+        "suggestions": ov.get("suggestions", ws.suggestions),
+    }
 
 
 def get_workspace(workspace_id: str) -> Workspace:

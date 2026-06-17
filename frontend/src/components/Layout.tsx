@@ -3,6 +3,7 @@ import { NavLink, Outlet } from "react-router-dom";
 import { MessageSquare, Database, Upload, Settings } from "lucide-react";
 import gsap from "gsap";
 import ParticleField from "./ParticleField";
+import { useWorkspace } from "../workspace/WorkspaceContext";
 
 const nav = [
   { to: "/", label: "Chat", icon: MessageSquare, exact: true },
@@ -12,6 +13,8 @@ const nav = [
 ];
 
 export default function Layout() {
+  const { current } = useWorkspace();
+  const accentHex = current?.accent ?? "#FFA874";
   const asideRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -27,7 +30,7 @@ export default function Layout() {
 
   return (
     <div className="relative flex h-screen overflow-hidden">
-      <ParticleField />
+      <ParticleField accentHex={accentHex} />
 
       {/* Sidebar */}
       <aside

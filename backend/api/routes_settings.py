@@ -5,11 +5,11 @@ from pydantic import BaseModel
 from typing import Optional
 
 from backend.llm.prompts import DEFAULT_SYSTEM_PROMPT
-from backend.config import settings
+from backend.config import settings, data_path
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
-SETTINGS_FILE = "./data/settings.json"
+SETTINGS_FILE = data_path("data", "settings.json")
 
 
 def load_settings_from_disk() -> dict:

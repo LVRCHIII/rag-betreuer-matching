@@ -6,9 +6,20 @@ from typing import List
 # unabhängig vom aktuellen Arbeitsverzeichnis funktionieren
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# Beschreibbarer Daten-/Konfig-Ordner. In der gebündelten App (PyInstaller) wird
+# RAG_DATA_DIR vom Launcher auf einen User-Ordner gesetzt (z.B. %LOCALAPPDATA%),
+# weil der Installationsordner (Program Files / .app) schreibgeschützt ist.
+# Im Repo-/Dev-Betrieb bleibt es die Projektwurzel.
+DATA_ROOT = os.environ.get("RAG_DATA_DIR") or PROJECT_ROOT
+
 
 def _abs(path: str) -> str:
-    return path if os.path.isabs(path) else os.path.join(PROJECT_ROOT, path)
+    return path if os.path.isabs(path) else os.path.join(DATA_ROOT, path)
+
+
+def data_path(*parts: str) -> str:
+    """Pfad innerhalb des beschreibbaren Daten-Ordners."""
+    return os.path.join(DATA_ROOT, *parts)
 
 
 class Settings(BaseSettings):
@@ -39,7 +50,7 @@ class Settings(BaseSettings):
         return [o.strip() for o in self.cors_origins.split(",")]
 
     class Config:
-        env_file = os.path.join(PROJECT_ROOT, ".env")
+        env_file = os.path.join(DATA_ROOT, ".env")
         case_sensitive = False
 
 

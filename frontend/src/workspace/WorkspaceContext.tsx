@@ -18,6 +18,7 @@ interface WorkspaceContextValue {
   workspaces: Workspace[];
   current: Workspace | null;
   setWorkspace: (id: string) => void;
+  refresh: () => Promise<void>;
   ready: boolean;
 }
 
@@ -25,17 +26,34 @@ const STORAGE_KEY = "rag-workspace";
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
-/** "#B58CE0" → "181 140 224" für die CSS-Variable --bht-accent */
-function hexToRgbTriplet(hex: string): string {
+function parseHex(hex: string): [number, number, number] {
   const h = hex.replace("#", "");
-  const r = parseInt(h.slice(0, 2), 16);
-  const g = parseInt(h.slice(2, 4), 16);
-  const b = parseInt(h.slice(4, 6), 16);
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+
+function triplet([r, g, b]: [number, number, number]): string {
   return `${r} ${g} ${b}`;
 }
 
+function mix(base: [number, number, number], t: number): [number, number, number] {
+  return [
+    Math.round(base[0] + (255 - base[0]) * t),
+    Math.round(base[1] + (255 - base[1]) * t),
+    Math.round(base[2] + (255 - base[2]) * t),
+  ];
+}
+
+function darken(base: [number, number, number], t: number): [number, number, number] {
+  return [Math.round(base[0] * (1 - t)), Math.round(base[1] * (1 - t)), Math.round(base[2] * (1 - t))];
+}
+
 function applyAccent(hex: string) {
-  document.documentElement.style.setProperty("--bht-accent", hexToRgbTriplet(hex));
+  const rgb = parseHex(hex);
+  const el = document.documentElement;
+  el.style.setProperty("--bht-accent", triplet(rgb));
+  el.style.setProperty("--bht-accent-soft", triplet(mix(rgb, 0.33)));
+  el.style.setProperty("--bht-accent-deep", triplet(darken(rgb, 0.15)));
+  el.style.setProperty("--bht-accent-glow", triplet(mix(rgb, 0.70)));
 }
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
@@ -46,16 +64,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
 
   // Bereiche vom Backend laden (Single Source of Truth)
-  useEffect(() => {
-    getWorkspaces().then((data: { default: string; workspaces: Workspace[] }) => {
-      setWorkspaces(data.workspaces);
-      setCurrentId((prev) => {
-        const valid = prev && data.workspaces.some((w) => w.id === prev);
-        return valid ? prev : data.default;
-      });
-      setReady(true);
+  const refresh = useCallback(async () => {
+    const data: { default: string; workspaces: Workspace[] } = await getWorkspaces();
+    setWorkspaces(data.workspaces);
+    setCurrentId((prev) => {
+      const valid = prev && data.workspaces.some((w) => w.id === prev);
+      return valid ? prev : data.default;
     });
+    setReady(true);
   }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
   const current = workspaces.find((w) => w.id === currentId) ?? null;
 
@@ -70,7 +91,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const setWorkspace = useCallback((id: string) => setCurrentId(id), []);
 
   return (
-    <WorkspaceContext.Provider value={{ workspaces, current, setWorkspace, ready }}>
+    <WorkspaceContext.Provider value={{ workspaces, current, setWorkspace, refresh, ready }}>
       {children}
     </WorkspaceContext.Provider>
   );

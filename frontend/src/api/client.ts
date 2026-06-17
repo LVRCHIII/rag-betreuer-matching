@@ -280,3 +280,19 @@ export async function getWorkspaces() {
   if (!res.ok) throw new Error("Workspaces konnten nicht geladen werden");
   return res.json();
 }
+
+export async function updateWorkspaceTexts(id: string, data: Record<string, unknown>) {
+  const res = await fetch(`${BASE}/api/workspaces/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Bereich-Texte konnten nicht gespeichert werden");
+  return res.json();
+}
+
+export async function resetWorkspaceTexts(id: string) {
+  const res = await fetch(`${BASE}/api/workspaces/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Bereich-Texte konnten nicht zurückgesetzt werden");
+  return res.json();
+}

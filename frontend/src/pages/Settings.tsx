@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from "react";
-import { Save, Loader2, RefreshCw, Globe, Sparkles } from "lucide-react";
+import { Save, Loader2, RefreshCw, Globe, Sparkles, LayoutTemplate, Plus, X, RotateCcw } from "lucide-react";
 import gsap from "gsap";
-import { getSettings, saveSettings, getModels, getScraperStatus, streamScraper } from "../api/client";
+import { getSettings, saveSettings, getModels, getScraperStatus, streamScraper, updateWorkspaceTexts, resetWorkspaceTexts } from "../api/client";
 import type { ScraperStatus } from "../api/client";
+import { useWorkspace } from "../workspace/WorkspaceContext";
 
 export default function Settings() {
+  const { current: ws, refresh: refreshWorkspaces } = useWorkspace();
   const [systemPrompt, setSystemPrompt] = useState("");
   const [llmModel, setLlmModel] = useState("");
   const [llmBackend, setLlmBackend] = useState("ollama");
@@ -14,6 +16,58 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const pageRef = useRef<HTMLDivElement>(null);
+
+  // Bereich-Darstellung (Texte des aktiven Bereichs)
+  const [wsLabel, setWsLabel] = useState("");
+  const [wsSubtitle, setWsSubtitle] = useState("");
+  const [wsTitle, setWsTitle] = useState("");
+  const [wsIntro, setWsIntro] = useState("");
+  const [wsPlaceholder, setWsPlaceholder] = useState("");
+  const [wsSuggestions, setWsSuggestions] = useState<string[]>([]);
+  const [wsSaving, setWsSaving] = useState(false);
+  const [wsSaved, setWsSaved] = useState(false);
+
+  // Felder aus dem aktiven Bereich übernehmen, wenn er (neu) geladen ist
+  useEffect(() => {
+    if (!ws) return;
+    setWsLabel(ws.label);
+    setWsSubtitle(ws.subtitle);
+    setWsTitle(ws.chat_title);
+    setWsIntro(ws.chat_intro);
+    setWsPlaceholder(ws.placeholder);
+    setWsSuggestions(ws.suggestions.length ? ws.suggestions : [""]);
+  }, [ws]);
+
+  const handleSaveWorkspace = async () => {
+    if (!ws) return;
+    setWsSaving(true);
+    try {
+      await updateWorkspaceTexts(ws.id, {
+        label: wsLabel,
+        subtitle: wsSubtitle,
+        chat_title: wsTitle,
+        chat_intro: wsIntro,
+        placeholder: wsPlaceholder,
+        suggestions: wsSuggestions,
+      });
+      await refreshWorkspaces();
+      setWsSaved(true);
+      setTimeout(() => setWsSaved(false), 2000);
+    } finally {
+      setWsSaving(false);
+    }
+  };
+
+  const handleResetWorkspace = async () => {
+    if (!ws) return;
+    setWsSaving(true);
+    try {
+      await resetWorkspaceTexts(ws.id);
+      await refreshWorkspaces();
+    } finally {
+      setWsSaving(false);
+    }
+  };
 
   // BHT-Scraper
   const [scraperStatus, setScraperStatus] = useState<ScraperStatus>({});
@@ -266,6 +320,136 @@ export default function Settings() {
             )}
           </div>
         </div>
+
+        {/* Bereich-Darstellung */}
+        {ws && (
+          <div data-reveal className="glass rounded-2xl p-5 space-y-4">
+            <div className="flex items-center gap-2">
+              <LayoutTemplate size={14} className="text-bht-accent" />
+              <h2 className="font-display text-sm font-semibold text-bht-cream/85 tracking-tight">
+                Darstellung — {ws.label}
+              </h2>
+              <span
+                className="ml-1 w-2 h-2 rounded-full flex-shrink-0"
+                style={{ background: ws.accent }}
+              />
+            </div>
+            <p className="text-xs text-bht-cream/40 leading-relaxed">
+              Texte der Startseite dieses Bereichs. Änderungen sind sofort sichtbar und nur für „{ws.label}" gültig.
+            </p>
+
+            <div className="grid grid-cols-2 gap-3.5">
+              <div className="space-y-1.5">
+                <label className="text-[10px] uppercase tracking-[0.18em] text-bht-cream/40 font-semibold">
+                  Bereichsname
+                </label>
+                <input
+                  value={wsLabel}
+                  onChange={(e) => setWsLabel(e.target.value)}
+                  className="field w-full px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] uppercase tracking-[0.18em] text-bht-cream/40 font-semibold">
+                  Untertitel
+                </label>
+                <input
+                  value={wsSubtitle}
+                  onChange={(e) => setWsSubtitle(e.target.value)}
+                  className="field w-full px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] uppercase tracking-[0.18em] text-bht-cream/40 font-semibold">
+                Große Überschrift
+              </label>
+              <input
+                value={wsTitle}
+                onChange={(e) => setWsTitle(e.target.value)}
+                placeholder="z.B. Finde die passende Betreuung"
+                className="field w-full px-3 py-2 text-sm"
+              />
+              <p className="text-[10px] text-bht-cream/30">
+                Das letzte Wort wird als farbiges Akzentwort dargestellt.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] uppercase tracking-[0.18em] text-bht-cream/40 font-semibold">
+                Beschreibung
+              </label>
+              <textarea
+                value={wsIntro}
+                onChange={(e) => setWsIntro(e.target.value)}
+                rows={2}
+                className="field w-full px-3 py-2 text-sm resize-y leading-relaxed"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] uppercase tracking-[0.18em] text-bht-cream/40 font-semibold">
+                Eingabe-Platzhalter
+              </label>
+              <input
+                value={wsPlaceholder}
+                onChange={(e) => setWsPlaceholder(e.target.value)}
+                className="field w-full px-3 py-2 text-sm"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] uppercase tracking-[0.18em] text-bht-cream/40 font-semibold">
+                Vorschlags-Prompts
+              </label>
+              {wsSuggestions.map((s, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    value={s}
+                    onChange={(e) =>
+                      setWsSuggestions((prev) => prev.map((v, j) => (j === i ? e.target.value : v)))
+                    }
+                    placeholder={`Vorschlag ${i + 1}`}
+                    className="field flex-1 px-3 py-2 text-sm"
+                  />
+                  <button
+                    onClick={() => setWsSuggestions((prev) => prev.filter((_, j) => j !== i))}
+                    className="p-2 rounded-xl bg-white/[0.04] border border-white/[0.08] text-bht-cream/40 hover:text-bht-accent hover:border-bht-accent/30 transition-colors flex-shrink-0"
+                    title="Entfernen"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              ))}
+              <button
+                onClick={() => setWsSuggestions((prev) => [...prev, ""])}
+                className="flex items-center gap-1.5 text-xs text-bht-cream/45 hover:text-bht-accent-soft transition-colors"
+              >
+                <Plus size={13} /> Vorschlag hinzufügen
+              </button>
+            </div>
+
+            <div className="flex items-center gap-3 pt-1">
+              <button
+                onClick={handleSaveWorkspace}
+                disabled={wsSaving}
+                className="btn-ember flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl disabled:opacity-40"
+              >
+                {wsSaving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                {wsSaved ? "Gespeichert ✓" : "Texte speichern"}
+              </button>
+              <button
+                onClick={handleResetWorkspace}
+                disabled={wsSaving}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs text-bht-cream/45 hover:text-bht-accent rounded-xl transition-colors disabled:opacity-40"
+                title="Auf Standardwerte zurücksetzen"
+              >
+                <RotateCcw size={13} /> Zurücksetzen
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* System Prompt */}
         <div data-reveal className="glass rounded-2xl p-5 space-y-3">

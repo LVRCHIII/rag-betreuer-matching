@@ -1,12 +1,11 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 
-/**
- * Subtiles 3D-"Wissensnetz" im Hintergrund: zwei langsam rotierende
- * Punktwolken (Creme + Orange) mit Mouse-Parallax. Läuft mit gedrosseltem
- * DPR und pausiert, wenn der Tab nicht sichtbar ist.
- */
-export default function ParticleField() {
+interface Props {
+  accentHex: string;
+}
+
+export default function ParticleField({ accentHex }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -65,8 +64,9 @@ export default function ParticleField() {
       return new THREE.Points(geo, mat);
     };
 
+    const accentInt = parseInt(accentHex.replace("#", ""), 16);
     const cream = makeCloud(620, 7, 0xfff5ef, 0.035, 0.5);
-    const ember = makeCloud(240, 6, 0xffa874, 0.06, 0.65);
+    const ember = makeCloud(240, 6, accentInt, 0.06, 0.65);
     const mintFar = makeCloud(160, 9, 0x8fd8c7, 0.045, 0.25);
     scene.add(cream, ember, mintFar);
 
@@ -129,7 +129,7 @@ export default function ParticleField() {
       renderer.dispose();
       mount.removeChild(renderer.domElement);
     };
-  }, []);
+  }, [accentHex]);
 
   return (
     <div

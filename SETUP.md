@@ -5,9 +5,22 @@
 
 ---
 
-## Schnellinstallation (empfohlen)
+## Für Endnutzer: fertige App (am einfachsten)
 
-Statt der manuellen Schritte unten gibt es jetzt eine Ein-Klick-Installation:
+Für nicht-technische Nutzer gibt es eine **gebündelte Desktop-App** – kein Python,
+kein Node, keine Kommandozeile nötig:
+- **Windows:** `BetreuerMatching-Setup.exe` herunterladen, doppelklicken, installieren.
+- **macOS:** `BetreuerMatching-Installer.dmg` öffnen, App in „Programme" ziehen.
+
+Danach App starten – der Browser öffnet sich automatisch. Einzige Voraussetzung:
+**Ollama** installieren (https://ollama.com) und einmalig `ollama pull llama3` ausführen.
+Wie diese Installer gebaut werden, steht in **[INSTALLER.md](INSTALLER.md)**.
+
+---
+
+## Schnellinstallation aus dem Quellcode (für Entwickler)
+
+Statt der manuellen Schritte unten gibt es eine Ein-Klick-Installation aus dem Repo:
 
 1. **Python 3.11** und **Ollama** installieren (siehe Schritt 0), dann `ollama pull llama3.1:8b`.
 2. Projektordner auf den Windows-PC kopieren (das Frontend ist bereits gebaut, `frontend/dist/` muss mitkopiert werden – Node.js wird auf dem Windows-PC **nicht** benötigt).
