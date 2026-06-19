@@ -30,3 +30,6 @@ frontend/.claude/
 .idea/
 .vscode/
 *.swp
+
+# Benchmark-Ergebnisse (lokal, nicht versionieren)
+benchmark/results/

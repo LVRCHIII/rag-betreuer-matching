@@ -418,4 +418,35 @@ Test-Set: 20–30 deutsche Fragen aus dem Betreuer-Matching-Kontext
 
 ---
 
+## 17. Automatisiertes Benchmark / Evaluation (umgesetzt – Stand 19. Juni 2026)
+
+Ordner **`benchmark/`** – automatisierte, reproduzierbare Qualitätsmessung über viele
+Fragen. Erweitert die unter Abschnitt 16 geplante `/api/eval`-Logik und nutzt dieselben
+Backend-Module (retrieve, build_context, Ollama, RAGAS).
+
+**Drei Test-Ebenen:**
+- **A – Matching-Genauigkeit** (ohne LLM-Judge, schnell, Hunderte Fragen): Ground Truth
+  automatisch aus den Lehrenden-Profilen (Forschungsgebiet von Prof. X → Frage, korrekte
+  Antwort = Prof. X). Metriken: Top-1/3/5, MRR.
+- **B – Antwortqualität (RAGAS, LLM-as-Judge, Stichprobe ~100)**: Faithfulness,
+  Answer Relevancy, Context Recall. Bewerter = lokales Ollama-Modell; Embeddings = lokales e5.
+- **C – Robustheit** (ohne Judge): unpassende/leere Anfragen → korrekte Ablehnung,
+  Sprache (Deutsch), Quellen.
+
+**Aufruf:** `python -m benchmark.run --collection lehrende --n-matching 300 --n-ragas 100`
+(resümierbar via `--resume`). **Output** in `benchmark/results/` (gitignored): Excel-Report
+(Zusammenfassung mit KPI-Ampel / Pro-Frage / Verteilungen+Chart), Markdown-Summary, JSON.
+Windows-Schritte siehe `benchmark/README.md`.
+
+**KPI-Zielwerte** (in `benchmark/report.py` → `TARGETS`, = Kap. 6.5 der Projektdoku):
+Top-3 ≥ 0,70 · Faithfulness ≥ 0,85 · Answer Relevancy ≥ 0,80 · Context Recall ≥ 0,75.
+SUS bewusst raus (kein Nutzertest).
+
+**Status / nächster Schritt:** Code fertig + isoliert getestet (Logik, Excel valide), aber
+**voller Lauf steht noch aus** – auf dem Windows-PC (RTX) ausführen: venv bauen, Ollama
+starten (`llama3.1:8b`), Collection `lehrende` indexieren, dann Mini-Probelauf, dann voller
+Lauf. Ergebnisse anschließend in Kap. 6.5 des Abschlussberichts übertragen.
+
+---
+
 *Erstellt: Juni 2026 | Projekt: BHT Betreuer-Matching, Gruppe 02 | Lucas Bruhn*
