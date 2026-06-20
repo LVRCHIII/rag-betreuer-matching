@@ -4,6 +4,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional
 
+from backend.config import settings
 from backend.retrieval.query import retrieve, build_context
 from backend.llm.client import stream_llm
 from backend.api.routes_settings import load_settings_from_disk
@@ -55,6 +56,7 @@ async def chat_generator(req: ChatRequest, workspace: str = DEFAULT_WORKSPACE):
             k=req.k,
             similarity_threshold=req.similarity_threshold,
             embedding_model=req.embedding_model,
+            mode=settings.retrieval_mode,
         )
 
     context = build_context(chunks)

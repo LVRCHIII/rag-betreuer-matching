@@ -10,6 +10,9 @@ chromadb==0.5.23
 # Embedding
 sentence-transformers==3.3.1
 
+# Retrieval (hybrid: BM25 + dense)
+rank-bm25==0.2.2
+
 # Datei-Verarbeitung
 beautifulsoup4==4.12.3
 pypdf2==3.0.1

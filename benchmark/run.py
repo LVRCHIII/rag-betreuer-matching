@@ -63,6 +63,8 @@ def main():
                     help="Mindest-Similarity für Kontext; darunter → Ablehn-Pfad (Robustheit)")
     ap.add_argument("--prompt-variant", default="current", choices=["current", "v2"],
                     help="System-Prompt-Variante: 'current' (Settings) oder 'v2' (mit Ablehn-Regel)")
+    ap.add_argument("--retrieval", default="dense", choices=["dense", "hybrid"],
+                    help="Retrieval-Modus: 'dense' (e5) oder 'hybrid' (BM25+dense via RRF)")
     args = ap.parse_args()
 
     model = args.model or settings.llm_model
@@ -103,7 +105,8 @@ def main():
         }
         try:
             chunks = pipeline.retrieve_for(q.question, args.collection, args.workspace,
-                                           k=args.k, extra_collections=extra)
+                                           k=args.k, extra_collections=extra,
+                                           retrieval=args.retrieval)
             sources = pipeline.sources_view(chunks)
             rec["sources"] = sources
             # Kontext, den das Modell tatsächlich sieht: Chunks unter Schwelle verwerfen
@@ -156,6 +159,7 @@ def main():
         "embedding_model": settings.embedding_model, "collection": args.collection,
         "extra_collections": ",".join(extra) or "-", "k": args.k,
         "min_score": args.min_score, "prompt_variant": args.prompt_variant,
+        "retrieval": args.retrieval,
         "unique_only": not args.allow_ambiguous, "commit": git_commit(),
     }
     xlsx, md, js = report.write_all(records, meta, args.out)

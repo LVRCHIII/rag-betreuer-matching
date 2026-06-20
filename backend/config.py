@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     vector_db_backend: str = "chroma"
     chroma_persist_dir: str = "./data/chroma"
 
+    # Retrieval: 'hybrid' (BM25 + dense via RRF, empfohlen) oder 'dense'
+    retrieval_mode: str = "hybrid"
+
     # Upload
     upload_dir: str = "./data/uploads"
     max_upload_size_mb: int = 100

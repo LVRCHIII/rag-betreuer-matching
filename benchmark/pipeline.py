@@ -9,6 +9,7 @@ import httpx
 
 from backend.config import settings
 from backend.retrieval.query import retrieve, build_context
+from backend.retrieval.hybrid import hybrid_retrieve
 from backend.api.routes_settings import load_settings_from_disk
 from backend.llm.prompts import DEFAULT_SYSTEM_PROMPT
 from backend.workspaces import to_internal
@@ -22,12 +23,19 @@ def system_prompt_for(workspace: str) -> str:
 
 def retrieve_for(question: str, collection: str, workspace: str, k: int = 5,
                  similarity_threshold: float = 0.0,
-                 extra_collections: Optional[List[str]] = None) -> List[Dict[str, Any]]:
-    """Retrieval über die Ziel-Collection plus optionale Distraktor-Collections
-    (z. B. Modulhandbücher, Abschlussarbeiten) – realistischeres Szenario."""
+                 extra_collections: Optional[List[str]] = None,
+                 retrieval: str = "dense") -> List[Dict[str, Any]]:
+    """Retrieval über die Ziel-Collection plus optionale Distraktor-Collections.
+    retrieval='dense' (e5+ChromaDB) oder 'hybrid' (BM25+dense via RRF)."""
     names = [to_internal(workspace, collection)]
     for c in (extra_collections or []):
         names.append(to_internal(workspace, c))
+    if retrieval == "hybrid":
+        merged: List[Dict[str, Any]] = []
+        for name in names:
+            merged.extend(hybrid_retrieve(question, name, k=k))
+        merged.sort(key=lambda x: x["score"], reverse=True)
+        return merged[:k]
     return retrieve(question, names, k=k, similarity_threshold=similarity_threshold)
 
 
