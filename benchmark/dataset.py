@@ -7,6 +7,7 @@ Antwort ist per Konstruktion Prof. X. So entsteht eine objektive Ground Truth.
 """
 import random
 import re
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -58,14 +59,37 @@ def load_profiles(collection: str, workspace: str = "g02") -> List[dict]:
     return profs
 
 
-_SPLIT = re.compile(r"\s*[;,/]\s*|\s+und\s+|\s+sowie\s+")
+# Trennt Forschungsgebiete in einzelne Themen. Bindestrich NUR mit umgebenden
+# Leerzeichen trennen, damit Komposita wie "E-Learning" erhalten bleiben.
+_SPLIT = re.compile(r"\s*[;,/|]\s*|\s+und\s+|\s+sowie\s+|\s+–\s+|\s+-\s+")
+_SKIP_PREFIX = ("u.a", "z.b", "etc", "sowie", "insb", "div.", "versch")
 
 
 def _topics(p: dict) -> List[str]:
-    raw = p["forschung"] or p["professur"]
-    items = [t.strip(" .") for t in _SPLIT.split(raw) if len(t.strip()) >= 4]
-    skip = ("u.a", "z.b", "etc", "sowie", "insbesondere")
-    return [t for t in items if not t.lower().startswith(skip)][:3]
+    """Saubere, spezifische Themen aus den Forschungsgebieten (keine Fragmente,
+    keine zu breiten Strings). Professur wird bewusst NICHT als Thema genutzt –
+    sie liefert zu breite/mehrdeutige Begriffe."""
+    raw = p.get("forschung") or ""
+    out, seen = [], set()
+    for t in _SPLIT.split(raw):
+        t = t.strip(" .-–")
+        tl = t.lower()
+        if len(t) < 5 or len(t.split()) > 6:        # zu kurz/Fragment oder zu breit
+            continue
+        if tl.startswith(_SKIP_PREFIX) or tl in seen:
+            continue
+        seen.add(tl)
+        out.append(t)
+    return out
+
+
+def _topic_owners(profiles: List[dict]) -> dict:
+    """Thema (lowercase) -> Menge der Professor:innen mit diesem Thema."""
+    owners = defaultdict(set)
+    for p in profiles:
+        for t in _topics(p):
+            owners[t.lower()].add(p["name"])
+    return owners
 
 
 _TEMPLATES = [
@@ -76,15 +100,37 @@ _TEMPLATES = [
 ]
 
 
-def build_matching_questions(profiles: List[dict], n: int, seed: int = 42) -> List[TestQuestion]:
+def build_matching_questions(profiles: List[dict], n: int, seed: int = 42,
+                             unique_only: bool = True,
+                             per_profile: Optional[int] = None) -> List[TestQuestion]:
+    """Baut Known-Item-Fragen aus den Forschungsgebieten.
+
+    unique_only=True (Default): nur Themen verwenden, die GENAU EINER Person
+        zugeordnet sind → faire, eindeutige Ground Truth (max. ~689 Fragen).
+    per_profile: optionale Obergrenze an Fragen je Person (None = unbegrenzt).
+    """
     rng = random.Random(seed)
-    pool = [p for p in profiles if _topics(p)]
-    rng.shuffle(pool)
+    owners = _topic_owners(profiles)
+    prof_by_name = {p["name"]: p for p in profiles}
+
+    # Kandidaten (Person, Thema) sammeln
+    candidates = []  # (name, topic)
+    for p in profiles:
+        used = 0
+        for t in _topics(p):
+            if unique_only and len(owners[t.lower()]) > 1:
+                continue
+            candidates.append((p["name"], t))
+            used += 1
+            if per_profile and used >= per_profile:
+                break
+    rng.shuffle(candidates)
+
     qs: List[TestQuestion] = []
-    for i, p in enumerate(pool):
+    for i, (name, topic) in enumerate(candidates):
         if len(qs) >= n:
             break
-        topic = rng.choice(_topics(p))
+        p = prof_by_name[name]
         tmpl = _TEMPLATES[i % len(_TEMPLATES)]
         ref_parts = [f"Als Betreuer:in passt {p['name']}"]
         if p["professur"]:
@@ -94,8 +140,8 @@ def build_matching_questions(profiles: List[dict], n: int, seed: int = 42) -> Li
         if p["forschung"]:
             ref_parts.append(f". Schwerpunkte: {p['forschung']}")
         qs.append(TestQuestion(
-            id=f"A{i:04d}", layer="A", question=tmpl.format(t=topic),
-            expected=p["name"], reference="".join(ref_parts) + ".",
+            id=f"A{len(qs):04d}", layer="A", question=tmpl.format(t=topic),
+            expected=name, reference="".join(ref_parts) + ".",
             fachbereich=p["fachbereich"], kind="matching",
         ))
     return qs

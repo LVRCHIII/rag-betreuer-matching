@@ -21,16 +21,23 @@ def system_prompt_for(workspace: str) -> str:
 
 
 def retrieve_for(question: str, collection: str, workspace: str, k: int = 5,
-                 similarity_threshold: float = 0.0) -> List[Dict[str, Any]]:
-    internal = to_internal(workspace, collection)
-    return retrieve(question, [internal], k=k, similarity_threshold=similarity_threshold)
+                 similarity_threshold: float = 0.0,
+                 extra_collections: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    """Retrieval über die Ziel-Collection plus optionale Distraktor-Collections
+    (z. B. Modulhandbücher, Abschlussarbeiten) – realistischeres Szenario."""
+    names = [to_internal(workspace, collection)]
+    for c in (extra_collections or []):
+        names.append(to_internal(workspace, c))
+    return retrieve(question, names, k=k, similarity_threshold=similarity_threshold)
 
 
 def generate_answer(question: str, chunks: List[Dict[str, Any]], workspace: str,
-                    model: Optional[str] = None, temperature: float = 0.15) -> str:
-    """Erzeugt die Antwort wie routes_chat: System-Prompt + Kontext + Frage (nicht-streamend)."""
+                    model: Optional[str] = None, temperature: float = 0.15,
+                    system_prompt: Optional[str] = None) -> str:
+    """Erzeugt die Antwort wie routes_chat: System-Prompt + Kontext + Frage (nicht-streamend).
+    system_prompt überschreibt den aus den Settings (für A/B-Tests des Prompts)."""
     context = build_context(chunks)
-    sysp = system_prompt_for(workspace)
+    sysp = system_prompt or system_prompt_for(workspace)
     if context:
         full_system = f"{sysp}\n\n---\nKontext aus der Wissensbasis:\n\n{context}"
     else:

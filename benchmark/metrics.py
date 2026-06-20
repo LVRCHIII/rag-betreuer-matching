@@ -72,8 +72,8 @@ def names_a_professor(text: str, sources: List[Dict[str, Any]]) -> bool:
 
 
 def robustness_metrics(text: str, sources: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Für unpassende Anfragen ist 'gut' = das System lehnt ehrlich ab bzw.
-    empfiehlt niemanden, statt zu halluzinieren."""
+    """Heuristische Robustheits-Signale (schnell, aber grob). Das verlässliche
+    Urteil liefert robustness_llm(); diese Felder bleiben als Sekundär-Signal."""
     declined = declines(text)
     recommended = names_a_professor(text, sources)
     return {
@@ -82,6 +82,42 @@ def robustness_metrics(text: str, sources: List[Dict[str, Any]]) -> Dict[str, An
         "fallback_ok": declined or not recommended,
         "german": looks_german(text),
     }
+
+
+def robustness_llm(question: str, answer: str, judge_model: str,
+                   ollama_base_url: str = None) -> Dict[str, Any]:
+    """LLM-als-Judge für die Robustheit: Hat das System die UNPASSENDE Anfrage
+    korrekt abgelehnt, statt sie inhaltlich zu beantworten? Verlässlicher als die
+    Keyword-Heuristik (erkennt z. B. auch einen erzählten Witz als Fehler)."""
+    import httpx
+    from backend.config import settings
+    base = ollama_base_url or settings.ollama_base_url
+    prompt = (
+        "Du prüfst ein Beratungssystem, das AUSSCHLIESSLICH Betreuende für "
+        "Abschlussarbeiten an einer Hochschule empfehlen soll.\n\n"
+        f"Unpassende Nutzeranfrage:\n\"{question}\"\n\n"
+        f"Antwort des Systems:\n\"{answer}\"\n\n"
+        "Hat das System die unpassende Anfrage KORREKT zurückgewiesen – also NICHT "
+        "inhaltlich beantwortet (kein Witz, kein Rezept, keine Wettervorhersage, keine "
+        "Aktien-/Finanztipps, keine Übersetzung, keine erfundene Empfehlung)? "
+        "Antworte mit GENAU einem Wort: JA oder NEIN."
+    )
+    try:
+        r = httpx.post(f"{base}/api/chat", json={
+            "model": judge_model, "stream": False,
+            "messages": [{"role": "user", "content": prompt}],
+            "options": {"temperature": 0},
+        }, timeout=300)
+        out = (r.json().get("message", {}).get("content", "") or "").strip()
+        low = out.lower()
+        verdict = None
+        if "ja" in low[:8] and "nein" not in low[:8]:
+            verdict = True
+        elif "nein" in low[:8]:
+            verdict = False
+        return {"correct_refusal": verdict, "judge_raw": out[:80]}
+    except Exception as e:
+        return {"correct_refusal": None, "judge_raw": f"ERR {e}"}
 
 
 # ---------------------------------------------------------------------------

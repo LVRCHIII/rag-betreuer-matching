@@ -16,7 +16,7 @@ import traceback
 from datetime import date
 
 from backend.config import settings
-from benchmark import dataset, pipeline, metrics, report
+from benchmark import dataset, pipeline, metrics, report, prompt_variants
 
 
 def git_commit() -> str:
@@ -53,10 +53,22 @@ def main():
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--no-robustness", action="store_true", help="Ebene C überspringen")
+    ap.add_argument("--extra-collections", default="",
+                    help="Distraktor-Collections (kommagetrennt), z.B. modulhandbuecher,abschlussarbeiten")
+    ap.add_argument("--per-profile", type=int, default=None,
+                    help="Max. Fragen je Person (None = unbegrenzt, bis zu allen eindeutigen Themen)")
+    ap.add_argument("--allow-ambiguous", action="store_true",
+                    help="Auch mehrdeutige Themen zulassen (Default: nur eindeutige Ground Truth)")
+    ap.add_argument("--min-score", type=float, default=0.0,
+                    help="Mindest-Similarity für Kontext; darunter → Ablehn-Pfad (Robustheit)")
+    ap.add_argument("--prompt-variant", default="current", choices=["current", "v2"],
+                    help="System-Prompt-Variante: 'current' (Settings) oder 'v2' (mit Ablehn-Regel)")
     args = ap.parse_args()
 
     model = args.model or settings.llm_model
     judge = args.judge_model or model
+    extra = [c.strip() for c in args.extra_collections.split(",") if c.strip()]
+    sys_prompt = prompt_variants.build(args.prompt_variant, pipeline.system_prompt_for(args.workspace))
 
     print(f"» Lade Profile aus Collection '{args.collection}' (Workspace {args.workspace}) …")
     profiles = dataset.load_profiles(args.collection, args.workspace)
@@ -65,7 +77,9 @@ def main():
         sys.exit(1)
     print(f"  {len(profiles)} Profile geladen.")
 
-    matching = dataset.build_matching_questions(profiles, args.n_matching, seed=args.seed)
+    matching = dataset.build_matching_questions(
+        profiles, args.n_matching, seed=args.seed,
+        unique_only=not args.allow_ambiguous, per_profile=args.per_profile)
     robustness = [] if args.no_robustness else dataset.build_robustness_questions()
     ragas_ids = dataset.pick_ragas_sample(matching, args.n_ragas, seed=args.seed)
     questions = matching + robustness
@@ -88,9 +102,13 @@ def main():
             "expected": q.expected, "fachbereich": q.fachbereich,
         }
         try:
-            chunks = pipeline.retrieve_for(q.question, args.collection, args.workspace, k=args.k)
+            chunks = pipeline.retrieve_for(q.question, args.collection, args.workspace,
+                                           k=args.k, extra_collections=extra)
             sources = pipeline.sources_view(chunks)
             rec["sources"] = sources
+            # Kontext, den das Modell tatsächlich sieht: Chunks unter Schwelle verwerfen
+            # (leerer Kontext → Ablehn-Pfad). Matching-Metriken nutzen weiter die Rohtreffer.
+            gen_chunks = [c for c in chunks if (c.get("score") or 0) >= args.min_score]
 
             if q.layer == "A":
                 if q.id in ragas_ids:
@@ -101,16 +119,18 @@ def main():
                 rec.update(metrics.matching_metrics(q.expected, sources))
 
             if rec["layer"] == "B" or q.layer == "C":
-                answer = pipeline.generate_answer(q.question, chunks, args.workspace, model=model)
+                answer = pipeline.generate_answer(q.question, gen_chunks, args.workspace,
+                                                  model=model, system_prompt=sys_prompt)
                 rec["answer"] = answer
 
             if rec["layer"] == "B":
-                contexts = [c["text"] for c in chunks]
+                contexts = [c["text"] for c in gen_chunks]
                 rec.update(metrics.ragas_evaluate(
                     q.question, rec["answer"], contexts, q.reference, llm_model=judge))
 
             if q.layer == "C":
                 rec.update(metrics.robustness_metrics(rec.get("answer", ""), sources))
+                rec.update(metrics.robustness_llm(q.question, rec.get("answer", ""), judge))
 
         except Exception as e:  # einzelne Fehler nicht den ganzen Lauf abbrechen lassen
             rec["error"] = str(e)
@@ -120,12 +140,12 @@ def main():
         fout.write(json.dumps(rec, ensure_ascii=False) + "\n")
         fout.flush()
         tag = rec["layer"]
-        extra = ""
+        info = ""
         if "hit@3" in rec:
-            extra = f"Top3={'✓' if rec['hit@3'] else '✗'}"
+            info = f"Top3={'✓' if rec['hit@3'] else '✗'}"
         if "faithfulness" in rec:
-            extra += f" faith={rec.get('faithfulness')}"
-        print(f"  [{idx}/{total}] {q.id} ({tag}) {extra}")
+            info += f" faith={rec.get('faithfulness')}"
+        print(f"  [{idx}/{total}] {q.id} ({tag}) {info}")
 
     fout.close()
 
@@ -134,7 +154,9 @@ def main():
     meta = {
         "date": date.today().isoformat(), "model": model, "judge_model": judge,
         "embedding_model": settings.embedding_model, "collection": args.collection,
-        "k": args.k, "commit": git_commit(),
+        "extra_collections": ",".join(extra) or "-", "k": args.k,
+        "min_score": args.min_score, "prompt_variant": args.prompt_variant,
+        "unique_only": not args.allow_ambiguous, "commit": git_commit(),
     }
     xlsx, md, js = report.write_all(records, meta, args.out)
     print(f"\n✓ Fertig. Report geschrieben:\n  {xlsx}\n  {md}\n  {js}")

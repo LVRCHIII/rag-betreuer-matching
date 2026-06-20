@@ -52,6 +52,7 @@ def aggregate(records: List[Dict[str, Any]], meta: Dict[str, Any]) -> Dict[str, 
             "overall_mean": _mean([r.get("overall") for r in B]),
         },
         "layer_c": {
+            "correct_refusal": _rate([r.get("correct_refusal") for r in C]),
             "fallback_ok": _rate([r.get("fallback_ok") for r in C]),
             "declined": _rate([r.get("declined") for r in C]),
             "german": _rate([r.get("german") for r in C]),
@@ -103,7 +104,9 @@ def write_excel(records, agg, path):
     info = [
         ("Datum", m.get("date")), ("Sprachmodell (LLM)", m.get("model")),
         ("Embedding-Modell", m.get("embedding_model")), ("Bewerter (RAGAS-Judge)", m.get("judge_model")),
-        ("Collection", m.get("collection")), ("Top-k", m.get("k")),
+        ("Collection", m.get("collection")), ("Distraktor-Collections", m.get("extra_collections", "-")),
+        ("Top-k", m.get("k")), ("Min-Score (Kontext)", m.get("min_score", 0.0)),
+        ("System-Prompt-Variante", m.get("prompt_variant", "current")),
         ("Git-Commit", m.get("commit")),
         ("Fragen gesamt", agg["counts"]["matching"] + agg["counts"]["robustness"]),
         ("davon RAGAS-bewertet", agg["counts"]["ragas"]),
@@ -138,7 +141,7 @@ def write_excel(records, agg, path):
         ("Top-1-Trefferquote", agg["layer_a"]["hit@1"]),
         ("Top-5-Trefferquote", agg["layer_a"]["hit@5"]),
         ("Mean Reciprocal Rank (MRR)", agg["layer_a"]["mrr"]),
-        ("Robustheit – korrekte Ablehnung (Ebene C)", agg["layer_c"]["fallback_ok"]),
+        ("Robustheit – korrekte Ablehnung (LLM-Judge, Ebene C)", agg["layer_c"].get("correct_refusal")),
         ("Sprach-Compliance Deutsch (Ebene C)", agg["layer_c"]["german"]),
     ]
     for k, v in extra:
@@ -226,7 +229,9 @@ def write_markdown(agg, path):
         "# Evaluations-Report – RAG Betreuer-Matching", "",
         f"- **Datum:** {m.get('date')}",
         f"- **Sprachmodell:** {m.get('model')} · **Embedding:** {m.get('embedding_model')} · **RAGAS-Judge:** {m.get('judge_model')}",
-        f"- **Collection:** {m.get('collection')} · **Top-k:** {m.get('k')} · **Commit:** {m.get('commit')}",
+        f"- **Collection:** {m.get('collection')} (+Distraktoren: {m.get('extra_collections', '-')}) · "
+        f"**Top-k:** {m.get('k')} · **Min-Score:** {m.get('min_score', 0.0)} · "
+        f"**Prompt:** {m.get('prompt_variant', 'current')} · **Commit:** {m.get('commit')}",
         f"- **Fragen:** {agg['counts']['matching'] + agg['counts']['robustness']} gesamt, "
         f"davon {agg['counts']['ragas']} RAGAS-bewertet, {agg['counts']['robustness']} Robustheit", "",
         "## KPI-Abgleich", "",
@@ -245,7 +250,8 @@ def write_markdown(agg, path):
         f"- Answer Relevancy: **{num(b['answer_relevancy_mean'])}** (Median {num(b['answer_relevancy_median'])})",
         f"- Context Recall: **{num(b['context_recall_mean'])}**", "",
         "## Ebene C – Robustheit & Compliance", "",
-        f"- Korrekte Ablehnung unpassender Anfragen: **{pct(c['fallback_ok'])}**",
+        f"- Korrekte Ablehnung unpassender Anfragen (LLM-Judge): **{pct(c.get('correct_refusal'))}**",
+        f"- (heuristisch, nachrichtlich): {pct(c.get('fallback_ok'))}",
         f"- Sprach-Compliance (Deutsch): **{pct(c['german'])}**", "",
     ]
     with open(path, "w", encoding="utf-8") as f:
