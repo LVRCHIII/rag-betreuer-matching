@@ -126,9 +126,22 @@ verfehlter Treffer (Context Recall 0,00 bei Miss), nicht schlechter Antworten. D
 
 ## 12. Nächster Schritt: stärkeres Embedding-Modell (A/B)
 `multilingual-e5-small` ist das kleinste seiner Familie. Hypothese: ein stärkeres Embedding hebt
-die Trefferquote und damit alle Folge-KPIs. A/B (matching-only, ohne LLM → schnell) gegen
-**e5-large** und **BGE-m3**, neu indexiert in `g02_lehrende_e5large` / `g02_lehrende_bge`.
-Ergebnis siehe `benchmark/results/embedding_ab/` (wird ergänzt).
+die Trefferquote und damit alle Folge-KPIs. A/B (matching-only, ohne LLM → schnell, `benchmark/embedding_ab.py`)
+gegen **e5-large** und **BGE-m3**, neu indexiert in `g02_lehrende_e5large` / `g02_lehrende_bge`,
+689 eindeutige Fragen.
+
+| Embedding-Modell | Top-1 | Top-3 | Top-5 | MRR |
+|---|---|---|---|---|
+| e5-small (Baseline) | 33,2 % | 52,4 % | 60,1 % | 0,434 |
+| **e5-large** | **38,3 %** | **53,3 %** | **61,1 %** | **0,467** |
+| BGE-m3 | 25,5 % | 38,9 % | 44,8 % | 0,324 |
+
+**Ergebnis:** e5-large verbessert v. a. Top-1 (+5 Pp) und MRR (+0,03), Top-3 nur minimal
+(+0,9 Pp) – ein kleiner, kostenloser Gewinn, übernehmenswert. BGE-m3 ist hier klar schlechter
+(ohne passende Prompt-/Instruktionsnutzung) → verworfen. **Kernaussage:** Der Embedding-Tausch
+allein hebt die Trefferquote nicht entscheidend; die Top-5-Decke (~61 %) zeigt, dass in ~40 %
+der Fälle das richtige Profil gar nicht unter den Top-5 ist. Größerer Hebel daher: **hybrides
+Retrieval (BM25 + dense)** für exakte Fachbegriffe bzw. feiner/reichhaltiger gechunkte Profile.
 
 ## 13. Limitationen
 - **Selbst-Bewertungs-Bias:** qwen2.5:14b ist zugleich Antwort-Modell und Judge → mögliche
