@@ -162,6 +162,27 @@ für die Produktion ist **hybrid e5-large** dennoch robuster (fängt Paraphrasen
 stärkerer BM25-Gewichtung. → `backend/retrieval/hybrid.py` ist als wiederverwendbare Funktion
 bereit zur Integration in die produktive Query-Pipeline.
 
+### 12c. Endergebnis: voller Benchmark mit Hybrid-Retrieval (Vorher/Nachher)
+Identischer Aufbau (qwen2.5:14b, 689 Matching / 300 RAGAS, profilfokussiert, Prompt v2), nur das
+Retrieval variiert. `benchmark/results/final/` (dense) vs. `benchmark/results/final_hybrid/`
+(hybrid e5-large + BM25).
+| KPI | dense (e5-small) | hybrid (e5-large+BM25) | Ziel | Status hybrid |
+|---|---|---|---|---|
+| Top-1 | 33,0 % | 66,8 % | – | – |
+| **Top-3** | 51,5 % | **79,8 %** | ≥0,70 | **erfüllt** |
+| Top-5 | 58,1 % | 84,9 % | – | – |
+| MRR | 0,425 | 0,738 | – | – |
+| Faithfulness | 0,491 | 0,532 | ≥0,85 | nicht erfüllt |
+| Answer Relevancy | 0,610 | 0,693 | ≥0,80 | nicht erfüllt |
+| **Context Recall** | 0,501 | **0,803** | ≥0,75 | **erfüllt** |
+| Korrekte Ablehnung (Ebene C) | 80,0 % | 93,3 % | – | – |
+
+**Fazit:** Hybrid-Retrieval hebt fast alle KPIs deutlich; Top-3 und Context Recall erreichen das
+Ziel. Faithfulness bleibt unter Ziel – das ist überwiegend die Strenge/Eigenbewertung des lokalen
+14B-Judge (Median 0,60), nicht ein Retrieval-Problem. Empfehlung fürs System: Hybrid produktiv
+(ist integriert, `retrieval_mode='hybrid'`); zur Validierung der Faithfulness perspektivisch ein
+stärkerer, separater Judge.
+
 ## 13. Limitationen
 - **Selbst-Bewertungs-Bias:** qwen2.5:14b ist zugleich Antwort-Modell und Judge → mögliche
   Begünstigung qwens bei RAGAS. Matching und Robustheit sind judge-unabhängig.
