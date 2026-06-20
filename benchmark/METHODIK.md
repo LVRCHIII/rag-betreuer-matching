@@ -143,6 +143,25 @@ allein hebt die Trefferquote nicht entscheidend; die Top-5-Decke (~61 %) zeigt, 
 der Fälle das richtige Profil gar nicht unter den Top-5 ist. Größerer Hebel daher: **hybrides
 Retrieval (BM25 + dense)** für exakte Fachbegriffe bzw. feiner/reichhaltiger gechunkte Profile.
 
+### 12b. Hybrid-Retrieval (BM25 + dense, RRF) – `benchmark/hybrid_ab.py`, `backend/retrieval/hybrid.py`
+| Methode | Top-1 | Top-3 | Top-5 | MRR |
+|---|---|---|---|---|
+| BM25 (nur lexikalisch) | 61,8 % | 89,3 % | 92,7 % | 0,753 |
+| dense e5-small | 31,9 % | 50,9 % | 58,5 % | 0,420 |
+| hybrid e5-small+BM25 | 60,1 % | 75,2 % | 83,2 % | 0,687 |
+| dense e5-large | 36,9 % | 50,9 % | 58,8 % | 0,449 |
+| **hybrid e5-large+BM25** | **68,2 %** | **81,4 %** | **86,1 %** | **0,752** |
+
+**Ergebnis:** Lexikalische/hybride Suche hebt Top-3 von ~51 % auf 81–89 % – der mit Abstand
+größte Hebel. **Validitäts-Vorbehalt:** Die Fragen enthalten das Forschungsgebiet wörtlich aus
+dem Zielprofil, daher trifft BM25 nahezu geschenkt; bei paraphrasierten Realanfragen fiele BM25
+zurück und der dichte Anteil würde wichtiger. Die absoluten Werte sind also nach oben verzerrt,
+die qualitative Aussage (lexikalische Komponente unverzichtbar) ist aber robust. Dass BM25-only
+hier den Hybrid schlägt, liegt an der Gleichgewichtung im RRF (schwacher Dense-Ranker verwässert);
+für die Produktion ist **hybrid e5-large** dennoch robuster (fängt Paraphrasen ab), ggf. mit
+stärkerer BM25-Gewichtung. → `backend/retrieval/hybrid.py` ist als wiederverwendbare Funktion
+bereit zur Integration in die produktive Query-Pipeline.
+
 ## 13. Limitationen
 - **Selbst-Bewertungs-Bias:** qwen2.5:14b ist zugleich Antwort-Modell und Judge → mögliche
   Begünstigung qwens bei RAGAS. Matching und Robustheit sind judge-unabhängig.
